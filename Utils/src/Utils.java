@@ -1,13 +1,16 @@
 import javax.crypto.*;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.security.*;
 
 public class Utils {
     
+    public static final boolean debug = true;
+    
     public static enum Codes{
-        NoParameters  ,
-        KeyGenerationError,
-    }
+        KeyError,
+        SecretKeyError
+    }   
     
     public static enum Ports{
         ApiGateway(21000),
@@ -43,15 +46,20 @@ public class Utils {
         keyPairGenerator.initialize(2048);
         return keyPairGenerator.generateKeyPair();
     }
+    
+    public static byte[] hashData(String data) throws NoSuchAlgorithmException {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        return digest.digest(data.getBytes(StandardCharsets.UTF_8));
+    }
 
-    private static byte[] signData(byte[] hashedData, PrivateKey privateKey) throws NoSuchAlgorithmException, InvalidKeyException, SignatureException {
+    public static byte[] signData(byte[] hashedData, PrivateKey privateKey) throws NoSuchAlgorithmException, InvalidKeyException, SignatureException {
         Signature signature = Signature.getInstance("SHA256withRSA");
         signature.initSign(privateKey);
         signature.update(hashedData);
         return signature.sign();
     }
 
-    private static boolean verifySignature(byte[] hashedData, byte[] signedHash, PublicKey publicKey) throws NoSuchAlgorithmException, InvalidKeyException, SignatureException {
+    public static boolean verifySignature(byte[] hashedData, byte[] signedHash, PublicKey publicKey) throws NoSuchAlgorithmException, InvalidKeyException, SignatureException {
         Signature verifier = Signature.getInstance("SHA256withRSA");
         verifier.initVerify(publicKey);
         verifier.update(hashedData);

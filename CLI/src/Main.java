@@ -1,44 +1,59 @@
+import Register.RegisterRequest;
+
+import javax.crypto.SecretKey;
 import java.io.*;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 
 public class Main {
     private static boolean debug = false;
     public static void main(String[] args) {
-        if(args.length != 1)
-        {
-            System.err.println("Usage: java Main [debug]");
-            System.exit(Utils.Codes.NoParameters.ordinal());
-        }
-        debug = args[0].equals("debug");
+        debug = Utils.debug;
         int port = Utils.Ports.ApiGateway.getPort();
 
-        KeyPair keys = null;
+        KeyPair keys = null;    
         try {
             keys = Utils.generateKeyPair();
         } catch (NoSuchAlgorithmException e) {
             Utils.logError(debug, e, "Could not generate key pair.");
-            System.exit(Utils.Codes.KeyGenerationError.ordinal());
+            System.exit(Utils.Codes.KeyError.ordinal());
+        }
+        
+        PublicKey publicKey = keys.getPublic();
+        PrivateKey privateKey = keys.getPrivate();
+
+        SecretKey symetricKey = null;
+        try {
+            symetricKey = Utils.generateSecretKey();
+        } catch (NoSuchAlgorithmException e) {
+            Utils.logError(debug, e, "Could not secret key.");
+            System.exit(Utils.Codes.SecretKeyError.ordinal());
         }
 
-        System.out.println("Key public getAlgorithm: " + keys.getPublic().getAlgorithm());
-        System.out.println("Key public getEncoded: " + Arrays.toString(keys.getPublic().getEncoded()));
-        System.out.println("Key public getFormat: " + keys.getPublic().getFormat());
-
-        System.out.println("-----------------------------");
-        
-        System.out.println("Key private getAlgorithm: " + keys.getPrivate().getAlgorithm());
-        System.out.println("Key private getEncoded: " + Arrays.toString(keys.getPrivate().getEncoded()));
-        System.out.println("Key private getFormat: " + keys.getPrivate().getFormat());
-        
-
-        System.exit(0);
-        
         try(Socket socket = new Socket("localhost", port)) {
-            
-            BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
+            if(debug)
+            {
+                System.out.println("Connected to API Gateway on port: " + port);
+            }
+            var outputStream = new ObjectOutputStream(socket.getOutputStream());
+            var inputStream = new ObjectInputStream(socket.getInputStream());
+
+            var APIPublicKey = (PublicKey)inputStream.readObject();
+            if(debug)
+            {
+                System.out.println("Got API public key");
+            }
+            outputStream.writeObject(publicKey);
+            outputStream.flush();
+            if(debug)
+            {
+                System.out.println("Sent public key to API");
+            }
+            var in = new BufferedReader(new InputStreamReader(System.in));
             int option = 0;
             while (option != 6) {
                 printMenu();
@@ -57,7 +72,26 @@ public class Main {
                 switch (option)
                 {
                     case 1 -> {
-                        System.out.println("Register");
+                        System.out.println("Enter your username: ");
+                        String data = in.readLine();
+
+                        // Haszowanie danych
+                        byte[] hashedData = Utils.hashData(data);
+                        
+                        // Podpisanie kluczem prywatnym
+                        byte[] singedHash = Utils.signData(hashedData, privateKey);
+                        
+                        // Szyfrowanie danych kluczem symetrycznym 
+                        byte[] dataWithSymetricKey = Utils.encrypt(data.getBytes(StandardCharsets.UTF_8), symetricKey);
+
+                        // Szyfrowanie podpisu kluczem symetrycznym
+                        byte[] fingerprintWithSymetricKey = Utils.encrypt(singedHash, symetricKey);
+                        
+                        // Szyfrowanie klucza symetrycznego kluczem publicznym odbiorcy
+                        byte[] encryptedSecretKey = Utils.encryptKey(symetricKey, APIPublicKey);
+                        
+                        var registerRequest = new RegisterRequest(dataWithSymetricKey,fingerprintWithSymetricKey, encryptedSecretKey);
+                        outputStream.writeObject(registerRequest);
                     }
                     case 2 -> {
                         System.out.println("Login");
@@ -78,7 +112,7 @@ public class Main {
                     default -> throw new IllegalStateException("Unexpected value: " + option);
                 }
             }
-            cleanResources(null, null, socket);
+            cleanResources(inputStream, outputStream, socket);
         } catch (Exception e) {
             Utils.logError(debug, e, "Could not connect to API Gateway on port: " + port + ".");
         }
@@ -94,7 +128,7 @@ public class Main {
         System.out.println("6. Exit");
     }
     
-    private static void cleanResources(InputStream in, Writer out, Socket socket)
+    private static void cleanResources(InputStream in, OutputStream out, Socket socket)
     {
         try {
             if (in != null) {
@@ -109,5 +143,11 @@ public class Main {
         } catch (Exception e) {
             Utils.logError(debug, e, "Could not clean resources.");
         }
+    }
+    
+    private static String processRegister()
+    {
+        
+        return "";
     }
 }
