@@ -1,43 +1,66 @@
 import javax.crypto.*;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
+import java.io.ObjectOutputStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
 
 public class Utils {
-    
+
     public static final boolean debug = true;
-    
-    public static enum Codes{
+
+    public static enum Codes {
         KeyError,
         SecretKeyError
-    }   
-    
-    public static enum Ports{
+    }
+
+    public static enum Ports {
         ApiGateway(21000),
         Register(21001),
         Login(21002),
         Post(21003),
         FileServer(21004);
-        
+
         private final int port;
-        
+
         Ports(int port) {
             this.port = port;
         }
-        
+
         public int getPort() {
             return port;
         }
     }
-    
-    public static void logError(boolean debug, Exception e, String message) {
+
+    public static final String RESET = "\033[0m";
+    public static final String RED = "\033[0;31m";
+    public static final String YELLOW = "\033[0;33m";
+    public static final String BLUE = "\033[0;34m";
+
+
+    public static void logInfo(String message) {
+        System.out.println(BLUE + " INFO: " + RESET + message);
+    }
+
+    public static void logDebug(String message) {
+        if (debug) {
+            System.out.println(YELLOW + "DEBUG: " + RESET + message);
+        }
+    }
+
+    public static void logError(String message) {
+        System.out.println(RED + "ERROR: " + RESET + message);
+    }
+
+    public static void logException(Exception e, String message) {
         if (debug) {
             e.printStackTrace();
             System.err.println("-----------------------------");
-            System.err.println("Error: " + e.getMessage());
-        }
-        else {
-            System.err.println(message);
+            System.err.println(RED + "ERROR: " + RESET + e.getMessage());
+        } else {
+            System.err.println(RED + "ERROR: " + RESET + message);
         }
     }
 
@@ -46,7 +69,7 @@ public class Utils {
         keyPairGenerator.initialize(2048);
         return keyPairGenerator.generateKeyPair();
     }
-    
+
     public static byte[] hashData(String data) throws NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         return digest.digest(data.getBytes(StandardCharsets.UTF_8));
@@ -95,5 +118,127 @@ public class Utils {
         cipher.init(Cipher.DECRYPT_MODE, privateKey);
         byte[] decryptedKey = cipher.doFinal(encryptedKey);
         return new SecretKeySpec(decryptedKey, 0, decryptedKey.length, "AES");
+    }
+
+    public static <T> Operation sendMessage(Class<T> clazz, ObjectOutputStream outputStream, String data, PrivateKey privateKey, PublicKey receiverPublicKey, SecretKey symmetricKey) {
+        // Data hashing
+        byte[] hashedData = null;
+        try {
+            hashedData = Utils.hashData(data);
+        } catch (NoSuchAlgorithmException e) {
+            return new Operation(false, "Could not hash data.");
+        }
+
+        // Signing with private key
+        byte[] singedHash = null;
+        try {
+            singedHash = Utils.signData(hashedData, privateKey);
+        } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException e) {
+            return new Operation(false, "Could not sign data.");
+        }
+
+        // Encrypting data with symmetric key
+        byte[] dataWithSymetricKey = null;
+        try {
+            dataWithSymetricKey = Utils.encrypt(data.getBytes(StandardCharsets.UTF_8), symmetricKey);
+        } catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException | IllegalBlockSizeException |
+                 BadPaddingException e) {
+            return new Operation(false, "Could not encrypt data.");
+        }
+
+        // Encrypting signature with symmetric key
+        byte[] fingerprintWithSymetricKey = null;
+        try {
+            fingerprintWithSymetricKey = Utils.encrypt(singedHash, symmetricKey);
+        } catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException | IllegalBlockSizeException |
+                 BadPaddingException e) {
+            return new Operation(false, "Could not encrypt fingerprint.");
+        }
+
+        // Encrypting symmetric key with receiver public key
+        byte[] encryptedSecretKey = null;
+        try {
+            encryptedSecretKey = Utils.encryptKey(symmetricKey, receiverPublicKey);
+        } catch (Exception e) {
+            return new Operation(false, "Could not encrypt symmetric key.");
+        }
+
+        Constructor<T> constructor = null;
+        try {
+            constructor = clazz.getDeclaredConstructor(byte[].class, byte[].class, byte[].class);
+        } catch (NoSuchMethodException e) {
+            return new Operation(false, "Could not get constructor.");
+        }
+
+        T record = null;
+        try {
+            record = constructor.newInstance(dataWithSymetricKey, fingerprintWithSymetricKey, encryptedSecretKey);
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
+            return new Operation(false, "Could not create record.");
+        }
+
+        try {
+            outputStream.writeObject(record);
+            outputStream.flush();
+        } catch (IOException e) {
+            return new Operation(false, "Could not send message.");
+        }
+
+        return new Operation(true, "Message sent successfully.");
+    }
+
+    // TODO: think about passing SecretKey as Object on byte[](process SecretKey on first got message)
+    public static Operation processMessage(byte[] dataWithSymmetricKey, byte[] fingerprintWithSymmetricKey, byte[] encryptedSymmetricKey, PrivateKey privateKey, PublicKey senderPublicKey) {
+        SecretKey symmetricKey = null;
+        try {
+            symmetricKey = Utils.decryptKey(encryptedSymmetricKey, privateKey);
+        } catch (Exception e) {
+            Utils.logException(e, "Could not decrypt symmetric key.");
+            return new Operation(false, "Could not decrypt symmetric key.");
+        }
+
+        byte[] data;
+        try {
+            data = Utils.decrypt(dataWithSymmetricKey, symmetricKey);
+        } catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException |
+                 IllegalBlockSizeException | BadPaddingException e) {
+            Utils.logException(e, "Could not decrypt data.");
+            return new Operation(false, "Could not decrypt data.");
+        }
+
+        byte[] fingerprint;
+        try {
+            fingerprint = Utils.decrypt(fingerprintWithSymmetricKey, symmetricKey);
+        } catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException |
+                 IllegalBlockSizeException | BadPaddingException e) {
+            Utils.logException(e, "Could not decrypt fingerprint.");
+            return new Operation(false, "Could not decrypt fingerprint.");
+        }
+
+        byte[] hashedData;
+        try {
+            hashedData = Utils.hashData(new String(data));
+        } catch (NoSuchAlgorithmException e) {
+            Utils.logException(e, "Could not hash data.");
+            return new Operation(false, "Could not hash data.");
+        }
+
+        boolean isSignatureValid;
+        try {
+            isSignatureValid = Utils.verifySignature(hashedData, fingerprint, senderPublicKey);
+        } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException e) {
+            Utils.logException(e, "Could not verify signature.");
+            return new Operation(false, "Could not verify signature.");
+        }
+
+        String stringData = new String(data);
+
+        if (isSignatureValid) {
+            logDebug("Signature is valid. Message is authentic.");
+            logDebug("Decrypted message: " + stringData);
+            return new Operation(true, stringData);
+        }
+
+        return new Operation(false, "Signature is invalid! Message could have been modified.");
     }
 }
