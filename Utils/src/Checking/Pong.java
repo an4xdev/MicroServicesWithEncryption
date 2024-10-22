@@ -1,6 +1,12 @@
 package Checking;
 
-import java.io.Serializable;
+import Messages.Message;
 
-public record Pong(byte[] numberValue, byte[] fingerPrint, byte[] encryptedSymmetricKey) implements Serializable {
+import java.io.Serializable;
+import java.util.Optional;
+
+public class Pong extends Message {
+    public Pong(byte[] numberValue, byte[] fingerPrint, byte[] encryptedSymmetricKey) {
+        super(numberValue, fingerPrint, encryptedSymmetricKey);
+    }
 }

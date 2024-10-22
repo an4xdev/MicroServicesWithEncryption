@@ -1,6 +1,11 @@
 package Register;
 
-import java.io.Serializable;
+import Messages.Message;
 
-public record RegisterRequest(byte[] userName,byte[] fingerPrint, byte[] encryptedSymmetricKey) implements Serializable {
+import java.util.Optional;
+
+public class RegisterRequest extends Message {
+    public RegisterRequest(byte[] userName, byte[] fingerPrint, byte[] encryptedSymmetricKey) {
+        super(userName, fingerPrint, encryptedSymmetricKey);
+    }
 }

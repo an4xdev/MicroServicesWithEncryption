@@ -1,7 +1,8 @@
 import Checking.Ping;
 import Checking.Pong;
+import Register.RegisterForwardResponse;
 import Register.RegisterRequest;
-import jdk.jshell.execution.Util;
+import Register.RegisterResponse;
 
 import javax.crypto.SecretKey;
 import java.io.*;
@@ -12,6 +13,8 @@ import java.util.Random;
 public class Main {
     public static void main(String[] args) {
         int port = Utils.Ports.ApiGateway.getPort();
+        boolean sendSymmetricKey = true;
+        int user_id = -1;
 
         KeyPair keys = null;    
         try {
@@ -24,9 +27,9 @@ public class Main {
         PublicKey publicKey = keys.getPublic();
         PrivateKey privateKey = keys.getPrivate();
 
-        SecretKey symetricKey = null;
+        SecretKey symmetricKey = null;
         try {
-            symetricKey = Utils.generateSecretKey();
+            symmetricKey = Utils.generateSecretKey();
         } catch (NoSuchAlgorithmException e) {
             Utils.logException(e, "Could not secret key.");
             System.exit(Utils.Codes.SecretKeyError.ordinal());
@@ -46,7 +49,8 @@ public class Main {
             // ping pong data validation
             
             int value = new Random().nextInt();
-            var pingOperation = Utils.sendMessage(Ping.class, outputStream, Integer.toString(value), privateKey, APIPublicKey, symetricKey);
+            var pingOperation = Utils.sendMessage(Ping.class, outputStream, Integer.toString(value), privateKey, APIPublicKey, symmetricKey, sendSymmetricKey);
+            sendSymmetricKey = false;
             if(!pingOperation.isSuccessful())
             {
                 Utils.logError("Could not send ping message: " + pingOperation.message());
@@ -57,7 +61,7 @@ public class Main {
             var objResponse = inputStream.readObject();
             if(objResponse instanceof Pong pong)
             {
-                var pongOperation = Utils.processMessage(pong.numberValue(), pong.fingerPrint(), pong.encryptedSymmetricKey(), privateKey, APIPublicKey);
+                var pongOperation = Utils.processMessage(pong.data, pong.fingerPrint, privateKey, APIPublicKey, symmetricKey);
                 if(!pongOperation.isSuccessful())
                 {
                     Utils.logError("Could not process pong message: " + pongOperation.message());
@@ -111,12 +115,26 @@ public class Main {
                     case 1 -> {
                         System.out.println("Enter your username: ");
                         String data = in.readLine();
-                        var registerOperation = Utils.sendMessage(RegisterRequest.class, outputStream, data, privateKey, APIPublicKey, symetricKey);
+                        var registerOperation = Utils.sendMessage(RegisterRequest.class, outputStream, data, privateKey, APIPublicKey, symmetricKey, sendSymmetricKey);
                         if(!registerOperation.isSuccessful())
                         {
                             Utils.logError("Could not send registration message: " + registerOperation.message());
                             break;
                         }
+
+                        RegisterResponse response = (RegisterResponse) inputStream.readObject();
+                        var registerResponseOperation = Utils.processMessage(response.data, response.fingerPrint, privateKey, APIPublicKey, symmetricKey);
+                        if(!registerResponseOperation.isSuccessful()){
+                            Utils.logError("Could not parse registration response: " + registerResponseOperation.message());
+                            break;
+                        }
+                        RegisterForwardResponse obj = RegisterForwardResponse.ConvertFromString(registerResponseOperation.message());
+                        if(obj.code > 300){
+                            Utils.logError("Registration failed: "+ obj.message);
+                            break;
+                        }
+                        Utils.logInfo("Registration completed successfully.");
+                        user_id = obj.userId;
                     }
                     case 2 -> {
                         System.out.println("Login");

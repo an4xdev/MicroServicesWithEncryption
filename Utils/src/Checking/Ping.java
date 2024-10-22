@@ -1,6 +1,12 @@
 package Checking;
 
-import java.io.Serializable;
+import Messages.Message;
 
-public record Ping(byte[] numberValue, byte[] fingerPrint, byte[] encryptedSymmetricKey) implements Serializable {
+import java.io.Serializable;
+import java.util.Optional;
+
+public class Ping extends Message {
+    public Ping(byte[] numberValue, byte[] fingerPrint, byte[] encryptedSymmetricKey) {
+        super(numberValue, fingerPrint, encryptedSymmetricKey);
+    }
 }

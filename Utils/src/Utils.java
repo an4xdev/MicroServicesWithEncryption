@@ -1,11 +1,13 @@
 import javax.crypto.*;
 import javax.crypto.spec.SecretKeySpec;
+import javax.swing.text.html.Option;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
+import java.util.Optional;
 
 public class Utils {
 
@@ -120,7 +122,7 @@ public class Utils {
         return new SecretKeySpec(decryptedKey, 0, decryptedKey.length, "AES");
     }
 
-    public static <T> Operation sendMessage(Class<T> clazz, ObjectOutputStream outputStream, String data, PrivateKey privateKey, PublicKey receiverPublicKey, SecretKey symmetricKey) {
+    public static <T> Operation sendMessage(Class<T> clazz, ObjectOutputStream outputStream, String data, PrivateKey privateKey, PublicKey receiverPublicKey, SecretKey symmetricKey, boolean sendSymmetricKey) {
         // Data hashing
         byte[] hashedData = null;
         try {
@@ -147,9 +149,9 @@ public class Utils {
         }
 
         // Encrypting signature with symmetric key
-        byte[] fingerprintWithSymetricKey = null;
+        byte[] fingerprintWithSymmetricKey;
         try {
-            fingerprintWithSymetricKey = Utils.encrypt(singedHash, symmetricKey);
+            fingerprintWithSymmetricKey = Utils.encrypt(singedHash, symmetricKey);
         } catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException | IllegalBlockSizeException |
                  BadPaddingException e) {
             return new Operation(false, "Could not encrypt fingerprint.");
@@ -157,12 +159,13 @@ public class Utils {
 
         // Encrypting symmetric key with receiver public key
         byte[] encryptedSecretKey = null;
-        try {
-            encryptedSecretKey = Utils.encryptKey(symmetricKey, receiverPublicKey);
-        } catch (Exception e) {
-            return new Operation(false, "Could not encrypt symmetric key.");
+        if (sendSymmetricKey) {
+            try {
+                encryptedSecretKey = Utils.encryptKey(symmetricKey, receiverPublicKey);
+            } catch (Exception e) {
+                return new Operation(false, "Could not encrypt symmetric key.");
+            }
         }
-
         Constructor<T> constructor = null;
         try {
             constructor = clazz.getDeclaredConstructor(byte[].class, byte[].class, byte[].class);
@@ -170,15 +173,15 @@ public class Utils {
             return new Operation(false, "Could not get constructor.");
         }
 
-        T record = null;
+        T message = null;
         try {
-            record = constructor.newInstance(dataWithSymetricKey, fingerprintWithSymetricKey, encryptedSecretKey);
+            message = constructor.newInstance(dataWithSymetricKey, fingerprintWithSymmetricKey, encryptedSecretKey);
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
-            return new Operation(false, "Could not create record.");
+            return new Operation(false, "Could not create message.");
         }
 
         try {
-            outputStream.writeObject(record);
+            outputStream.writeObject(message);
             outputStream.flush();
         } catch (IOException e) {
             return new Operation(false, "Could not send message.");
@@ -187,16 +190,7 @@ public class Utils {
         return new Operation(true, "Message sent successfully.");
     }
 
-    // TODO: think about passing SecretKey as Object on byte[](process SecretKey on first got message)
-    public static Operation processMessage(byte[] dataWithSymmetricKey, byte[] fingerprintWithSymmetricKey, byte[] encryptedSymmetricKey, PrivateKey privateKey, PublicKey senderPublicKey) {
-        SecretKey symmetricKey = null;
-        try {
-            symmetricKey = Utils.decryptKey(encryptedSymmetricKey, privateKey);
-        } catch (Exception e) {
-            Utils.logException(e, "Could not decrypt symmetric key.");
-            return new Operation(false, "Could not decrypt symmetric key.");
-        }
-
+    public static Operation processMessage(byte[] dataWithSymmetricKey, byte[] fingerprintWithSymmetricKey, PrivateKey privateKey, PublicKey senderPublicKey, SecretKey symmetricKey) {
         byte[] data;
         try {
             data = Utils.decrypt(dataWithSymmetricKey, symmetricKey);

@@ -1,6 +1,9 @@
 import Checking.Ping;
 import Checking.Pong;
+import Register.RegisterForwardRequest;
+import Register.RegisterForwardResponse;
 import Register.RegisterRequest;
+import Register.RegisterResponse;
 
 import javax.crypto.SecretKey;
 import java.io.*;
@@ -8,21 +11,27 @@ import java.net.Socket;
 import java.security.*;
 
 public class ApiGatewayThread implements Runnable {
-    private final Socket socket;
-    private ObjectInputStream inputStream;
-    private ObjectOutputStream outputStream;
+    private final Socket clientSocket;
+    private ObjectInputStream clientInputStream;
+    private ObjectOutputStream clientOutputStream;
+
+    private Socket serviceSocket;
+    private ObjectInputStream serviceInputStream;
+    private ObjectOutputStream serviceOutputStream;
+
     private final KeyPair keyPair;
     private PublicKey clientPublicKey;
+    private SecretKey symmetricKey;
 
     public ApiGatewayThread(Socket socket, KeyPair keyPair) {
-        this.socket = socket;
+        this.clientSocket = socket;
         this.keyPair = keyPair;
     }
 
     private void prepare() {
         try {
-            outputStream = new ObjectOutputStream(socket.getOutputStream());
-            inputStream = new ObjectInputStream(socket.getInputStream());
+            clientOutputStream = new ObjectOutputStream(clientSocket.getOutputStream());
+            clientInputStream = new ObjectInputStream(clientSocket.getInputStream());
         } catch (Exception e) {
             Utils.logException(e, "Error while creating input/output stream");
             cleanResources();
@@ -31,8 +40,8 @@ public class ApiGatewayThread implements Runnable {
 
     private void initialConnection() {
         try {
-            outputStream.writeObject(keyPair.getPublic());
-            outputStream.flush();
+            clientOutputStream.writeObject(keyPair.getPublic());
+            clientOutputStream.flush();
         } catch (IOException e) {
             cleanResources();
         }
@@ -40,7 +49,7 @@ public class ApiGatewayThread implements Runnable {
 
         clientPublicKey = null;
         try {
-            clientPublicKey = (PublicKey) inputStream.readObject();
+            clientPublicKey = (PublicKey) clientInputStream.readObject();
         } catch (IOException e) {
             if (e instanceof EOFException) {
                 System.out.println("Connection closed by client.");
@@ -57,45 +66,54 @@ public class ApiGatewayThread implements Runnable {
 
     private void cleanResources() {
         try {
-            if (inputStream != null) {
-                inputStream.close();
+            if (clientInputStream != null) {
+                clientInputStream.close();
             }
-            if (outputStream != null) {
-                outputStream.close();
+            if (clientOutputStream != null) {
+                clientOutputStream.close();
             }
-            if (socket != null) {
-                socket.close();
+            if (clientSocket != null) {
+                clientSocket.close();
             }
         } catch (Exception e) {
             Utils.logException(e, "Error while closing resources.");
         }
     }
-    
-    private Operation processPing(){
+
+    private Operation processPing() {
         Object objRequest = null;
         try {
-            objRequest = inputStream.readObject();
+            objRequest = clientInputStream.readObject();
         } catch (IOException | ClassNotFoundException e) {
-            return  new Operation(false, "Could not read object.");
+            return new Operation(false, "Could not read object.");
         }
-        if(objRequest instanceof Ping ping)
-        {
+        if (objRequest instanceof Ping ping) {
             Utils.logDebug("Got ping request");
-            byte[] dataWithSymmetricKey = ping.numberValue();
-            byte[] fingerprintWithSymmetricKey = ping.fingerPrint();
-            byte[] encryptedSymmetricKey = ping.encryptedSymmetricKey();
-            
-            var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, encryptedSymmetricKey, keyPair.getPrivate(), clientPublicKey);
-            if(!operation.isSuccessful())
-            {
+            byte[] dataWithSymmetricKey = ping.data;
+            byte[] fingerprintWithSymmetricKey = ping.fingerPrint;
+            if (ping.encryptedSymmetricKey == null) {
+                return new Operation(false, "Encrypted secret key is empty.");
+            }
+            byte[] encryptedSymmetricKey = ping.encryptedSymmetricKey;
+
+            if (symmetricKey == null) {
+                try {
+                    symmetricKey = Utils.decryptKey(encryptedSymmetricKey, keyPair.getPrivate());
+                } catch (Exception e) {
+                    return new Operation(false, "Could not decrypt symmetric key.");
+                }
+            }
+
+            var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, keyPair.getPrivate(), clientPublicKey, symmetricKey);
+            if (!operation.isSuccessful()) {
                 Utils.logDebug(operation.message());
                 System.out.println(operation.message());
                 return new Operation(false, operation.message());
             }
-            
+
             String data = operation.message();
             int value;
-            try{
+            try {
                 value = Integer.parseInt(data);
             } catch (Exception e) {
                 Utils.logError("Could not parse ping value.");
@@ -110,20 +128,65 @@ public class ApiGatewayThread implements Runnable {
             }
 
             value += 10;
-            var responseOperation = Utils.sendMessage(Pong.class, outputStream, Integer.toString(value), keyPair.getPrivate(), clientPublicKey, symmetricKey);
-            if(!responseOperation.isSuccessful())
-            {
+            var responseOperation = Utils.sendMessage(Pong.class, clientOutputStream, Integer.toString(value), keyPair.getPrivate(), clientPublicKey, symmetricKey, false);
+            if (!responseOperation.isSuccessful()) {
                 Utils.logError("Could not send pong message: " + responseOperation.message());
                 return new Operation(false, responseOperation.message());
             }
-            
+
             return new Operation(true, "Ping pong data validation successful.");
-        }
-        else
-        {
+        } else {
             System.out.println("Unknown message.");
         }
         return new Operation(false, "Unknown message.");
+    }
+
+    private Operation sendToService(Object obj, int port) {
+        try {
+            serviceSocket = new Socket("localhost", port);
+        } catch (IOException e) {
+            return new Operation(false, "Cannot connect to service on port: " + port);
+        }
+
+        try {
+            serviceOutputStream = new ObjectOutputStream(serviceSocket.getOutputStream());
+            serviceInputStream = new ObjectInputStream(serviceSocket.getInputStream());
+        } catch (IOException e) {
+            return new Operation(false, "Cannot establish connection.");
+        }
+
+        try {
+            serviceOutputStream.writeObject(obj);
+            serviceOutputStream.flush();
+        } catch (IOException e) {
+            return new Operation(false, "Cannot send message.");
+        }
+
+        return new Operation(true, "");
+    }
+
+    private <T> T receiveMessage() {
+        if (serviceSocket == null || serviceOutputStream == null) {
+            Utils.logError("Output objects aren't closed.");
+            return null;
+        }
+        T obj = null;
+        try {
+            obj = (T) serviceInputStream.readObject();
+        } catch (IOException | ClassNotFoundException e) {
+            Utils.logException(e, "Input/output operations failed.");
+        }
+
+        try {
+            serviceInputStream.close();
+            serviceOutputStream.close();
+            serviceSocket.close();
+        } catch (IOException e) {
+            Utils.logException(e, "Closing connection failed.");
+            return null;
+        }
+
+        return obj;
     }
 
     @Override
@@ -131,8 +194,7 @@ public class ApiGatewayThread implements Runnable {
         prepare();
         initialConnection();
         var pingOperation = processPing();
-        if(!pingOperation.isSuccessful())
-        {
+        if (!pingOperation.isSuccessful()) {
             Utils.logError("Could not process ping message: " + pingOperation.message());
             cleanResources();
             return;
@@ -140,7 +202,7 @@ public class ApiGatewayThread implements Runnable {
         Object receivedObject;
         while (true) {
             try {
-                if ((receivedObject = inputStream.readObject()) == null) break;
+                if ((receivedObject = clientInputStream.readObject()) == null) break;
             } catch (IOException e) {
                 if (e instanceof EOFException) {
                     Utils.logInfo("Connection closed by client.");
@@ -155,20 +217,45 @@ public class ApiGatewayThread implements Runnable {
 
             if (receivedObject instanceof RegisterRequest req) {
                 Utils.logDebug("Got register request");
-                byte[] dataWithSymmetricKey = req.userName();
-                byte[] fingerprintWithSymmetricKey = req.fingerPrint();
-                byte[] encryptedSymmetricKey = req.encryptedSymmetricKey();
+                byte[] dataWithSymmetricKey = req.data;
+                byte[] fingerprintWithSymmetricKey = req.fingerPrint;
+                if (req.encryptedSymmetricKey == null && symmetricKey == null) {
+                    Utils.logError("Symmetric key is null and encrypted data is empty.");
+                    break;
+                }
 
-                var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, encryptedSymmetricKey, keyPair.getPrivate(), clientPublicKey);
+                var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, keyPair.getPrivate(), clientPublicKey, symmetricKey);
 
                 if (!operation.isSuccessful()) {
                     Utils.logDebug(operation.message());
                     System.out.println(operation.message());
                     break;
                 }
-                
-                String data = operation.message();
-                
+
+                var request = new RegisterForwardRequest();
+                request.login = operation.message();
+                request.publicKey = clientPublicKey;
+
+                var sendToServiceOperation = sendToService(request, Utils.Ports.Register.getPort());
+                if (!sendToServiceOperation.isSuccessful()) {
+                    Utils.logError(sendToServiceOperation.message());
+                    break;
+                }
+
+                RegisterForwardResponse response = receiveMessage();
+
+                if(response == null){
+                    Utils.logError("Could not receive response from service.");
+                    break;
+                }
+
+                var responseOperation = Utils.sendMessage(RegisterResponse.class, clientOutputStream, RegisterForwardResponse.ConvertToString(response), keyPair.getPrivate(), clientPublicKey, symmetricKey, false);
+
+                if(!responseOperation.isSuccessful())
+                {
+                    Utils.logError(responseOperation.message());
+                }
+
             } else {
                 System.out.println("Unknown message.");
             }
