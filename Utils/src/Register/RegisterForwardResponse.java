@@ -1,7 +1,6 @@
 package Register;
 
 import java.io.Serializable;
-import java.nio.charset.StandardCharsets;
 
 public class RegisterForwardResponse implements Serializable {
     public int code;
@@ -9,7 +8,7 @@ public class RegisterForwardResponse implements Serializable {
     public int userId;
 
     public static String ConvertToString(RegisterForwardResponse response){
-        return String.valueOf(response.code) +
+        return response.code +
                 ';' +
                 response.message +
                 ';' +

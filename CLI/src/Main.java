@@ -1,9 +1,11 @@
-import Checking.Ping;
-import Checking.Pong;
 import Register.RegisterForwardResponse;
 import Register.RegisterRequest;
 import Register.RegisterResponse;
+import jdk.jshell.execution.Util;
 
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import java.io.*;
 import java.net.Socket;
@@ -13,7 +15,6 @@ import java.util.Random;
 public class Main {
     public static void main(String[] args) {
         int port = Utils.Ports.ApiGateway.getPort();
-        boolean sendSymmetricKey = true;
         int user_id = -1;
 
         KeyPair keys = null;    
@@ -47,53 +48,74 @@ public class Main {
             Utils.logDebug("Sent public key to API");
             
             // ping pong data validation
+
+            Utils.logDebug("Starting ping pong data validation.");
+
+            Utils.logDebug("Sending ping request to API.");
             
             int value = new Random().nextInt();
-            var pingOperation = Utils.sendMessage(Ping.class, outputStream, Integer.toString(value), privateKey, APIPublicKey, symmetricKey, sendSymmetricKey);
-            sendSymmetricKey = false;
-            if(!pingOperation.isSuccessful())
+
+            byte[] pingRequest = Utils.encryptPing(value, APIPublicKey);
+
+            outputStream.writeObject(pingRequest);
+
+            // get response
+
+            int pongValue = inputStream.readInt();
+
+            Utils.logDebug("Got pong response from API.");
+
+            if(pongValue - 10 == value)
             {
-                Utils.logError("Could not send ping message: " + pingOperation.message());
-                cleanResources(inputStream, outputStream, socket);
-                return;
-            }
-            
-            var objResponse = inputStream.readObject();
-            if(objResponse instanceof Pong pong)
-            {
-                var pongOperation = Utils.processMessage(pong.data, pong.fingerPrint, privateKey, APIPublicKey, symmetricKey);
-                if(!pongOperation.isSuccessful())
-                {
-                    Utils.logError("Could not process pong message: " + pongOperation.message());
-                    cleanResources(inputStream, outputStream, socket);
-                    return;
-                }
-                int pongValue;
-                try{
-                    pongValue = Integer.parseInt(pongOperation.message());
-                } catch (Exception e) {
-                    Utils.logError("Could not parse pong value.");
-                    cleanResources(inputStream, outputStream, socket);
-                    return;
-                }
-                if(pongValue - 10 == value)
-                {
-                    Utils.logDebug("Ping pong data validation successful.");
-                }
-                else
-                {
-                    Utils.logError("Ping pong data validation failed.");
-                    cleanResources(inputStream, outputStream, socket);
-                    return;
-                }
+                Utils.logDebug("Ping pong data validation successful.");
             }
             else
             {
-                Utils.logError("Invalid response from API Gateway.");
+                Utils.logDebug("Ping pong data validation failed.");
+                Utils.logError("Ping pong data validation failed.");
                 cleanResources(inputStream, outputStream, socket);
                 return;
             }
-            
+
+            // get data to validate from API
+
+            byte[] pingRequestAPI = (byte[])inputStream.readObject();
+
+            Utils.logDebug("Got data to validate from API.");
+
+            int pongValueAPI = Utils.decryptPing(pingRequestAPI, privateKey);
+
+            pongValueAPI += 10;
+
+            Utils.logDebug("Sending pong response to API.");
+
+            outputStream.writeInt(pongValueAPI);
+            outputStream.flush();
+
+            int code = inputStream.readInt();
+
+            if(code != 200)
+            {
+                Utils.logError("Connection verification gone wrong.");
+                cleanResources(inputStream, outputStream, socket);
+                return;
+            }
+
+            byte[] key;
+            try {
+                key = Utils.encryptKey(symmetricKey, APIPublicKey);
+            } catch (Exception e) {
+                Utils.logException(e, "Could not encrypt symmetric key.");
+                cleanResources(inputStream, outputStream, socket);
+                return;
+            }
+
+            outputStream.writeObject(new SymmetricKeyMessage(key));
+
+            Utils.logDebug("Sent symmetric key to API.");
+
+            Utils.logInfo("Connection is successfully established with API Gateway.");
+
             var in = new BufferedReader(new InputStreamReader(System.in));
             int option = 0;
             while (option != 6) {
@@ -115,7 +137,7 @@ public class Main {
                     case 1 -> {
                         System.out.println("Enter your username: ");
                         String data = in.readLine();
-                        var registerOperation = Utils.sendMessage(RegisterRequest.class, outputStream, data, privateKey, APIPublicKey, symmetricKey, sendSymmetricKey);
+                        var registerOperation = Utils.sendMessage(RegisterRequest.class, outputStream, data, privateKey, symmetricKey);
                         if(!registerOperation.isSuccessful())
                         {
                             Utils.logError("Could not send registration message: " + registerOperation.message());
@@ -123,7 +145,7 @@ public class Main {
                         }
 
                         RegisterResponse response = (RegisterResponse) inputStream.readObject();
-                        var registerResponseOperation = Utils.processMessage(response.data, response.fingerPrint, privateKey, APIPublicKey, symmetricKey);
+                        var registerResponseOperation = Utils.processMessage(response.data, response.fingerPrint, APIPublicKey, symmetricKey);
                         if(!registerResponseOperation.isSuccessful()){
                             Utils.logError("Could not parse registration response: " + registerResponseOperation.message());
                             break;
@@ -157,10 +179,13 @@ public class Main {
             }
             cleanResources(inputStream, outputStream, socket);
         } catch (IOException e) {
-            Utils.logException(e, "Could not connect to API Gateway on port: " + port + ".");
+            Utils.logException(e, "Input output operations failed.");
         }
         catch (ClassNotFoundException e) {
-            Utils.logException(e, "Could not read object from input stream.");
+            Utils.logException(e, "Could not recognize object from input stream.");
+        } catch (NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException | BadPaddingException |
+                 InvalidKeyException e) {
+            Utils.logException(e, "Could not encrypt validation data.");
         }
     }
     

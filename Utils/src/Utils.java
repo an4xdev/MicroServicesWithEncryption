@@ -1,13 +1,11 @@
 import javax.crypto.*;
 import javax.crypto.spec.SecretKeySpec;
-import javax.swing.text.html.Option;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
-import java.util.Optional;
 
 public class Utils {
 
@@ -97,6 +95,19 @@ public class Utils {
         return keyGenerator.generateKey();
     }
 
+    public static byte[] encryptPing(int value, PublicKey receiverPubKey) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
+        Cipher cipher = Cipher.getInstance("RSA");
+        cipher.init(Cipher.ENCRYPT_MODE, receiverPubKey);
+        return cipher.doFinal(Integer.toString(value).getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static int decryptPing(byte[] encryptedValue, PrivateKey receiverPrivateKey) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException, NumberFormatException {
+        Cipher cipher = Cipher.getInstance("RSA");
+        cipher.init(Cipher.DECRYPT_MODE, receiverPrivateKey);
+        byte[] decryptedValue = cipher.doFinal(encryptedValue);
+        return Integer.parseInt(new String(decryptedValue));
+    }
+
     public static byte[] encrypt(byte[] dataToEncrypt, SecretKey secretKey) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
         Cipher cipher = Cipher.getInstance("AES");
         cipher.init(Cipher.ENCRYPT_MODE, secretKey);
@@ -122,7 +133,7 @@ public class Utils {
         return new SecretKeySpec(decryptedKey, 0, decryptedKey.length, "AES");
     }
 
-    public static <T> Operation sendMessage(Class<T> clazz, ObjectOutputStream outputStream, String data, PrivateKey privateKey, PublicKey receiverPublicKey, SecretKey symmetricKey, boolean sendSymmetricKey) {
+    public static <T> Operation sendMessage(Class<T> clazz, ObjectOutputStream outputStream, String data, PrivateKey privateKey, SecretKey symmetricKey) {
         // Data hashing
         byte[] hashedData = null;
         try {
@@ -157,25 +168,16 @@ public class Utils {
             return new Operation(false, "Could not encrypt fingerprint.");
         }
 
-        // Encrypting symmetric key with receiver public key
-        byte[] encryptedSecretKey = null;
-        if (sendSymmetricKey) {
-            try {
-                encryptedSecretKey = Utils.encryptKey(symmetricKey, receiverPublicKey);
-            } catch (Exception e) {
-                return new Operation(false, "Could not encrypt symmetric key.");
-            }
-        }
         Constructor<T> constructor = null;
         try {
-            constructor = clazz.getDeclaredConstructor(byte[].class, byte[].class, byte[].class);
+            constructor = clazz.getDeclaredConstructor(byte[].class, byte[].class);
         } catch (NoSuchMethodException e) {
             return new Operation(false, "Could not get constructor.");
         }
 
         T message = null;
         try {
-            message = constructor.newInstance(dataWithSymetricKey, fingerprintWithSymmetricKey, encryptedSecretKey);
+            message = constructor.newInstance(dataWithSymetricKey, fingerprintWithSymmetricKey);
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
             return new Operation(false, "Could not create message.");
         }
@@ -190,7 +192,7 @@ public class Utils {
         return new Operation(true, "Message sent successfully.");
     }
 
-    public static Operation processMessage(byte[] dataWithSymmetricKey, byte[] fingerprintWithSymmetricKey, PrivateKey privateKey, PublicKey senderPublicKey, SecretKey symmetricKey) {
+    public static Operation processMessage(byte[] dataWithSymmetricKey, byte[] fingerprintWithSymmetricKey, PublicKey senderPublicKey, SecretKey symmetricKey) {
         byte[] data;
         try {
             data = Utils.decrypt(dataWithSymmetricKey, symmetricKey);
@@ -225,9 +227,8 @@ public class Utils {
             return new Operation(false, "Could not verify signature.");
         }
 
-        String stringData = new String(data);
-
         if (isSignatureValid) {
+            String stringData = new String(data);
             logDebug("Signature is valid. Message is authentic.");
             logDebug("Decrypted message: " + stringData);
             return new Operation(true, stringData);

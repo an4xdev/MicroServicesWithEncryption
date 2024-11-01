@@ -1,14 +1,16 @@
-import Checking.Ping;
-import Checking.Pong;
 import Register.RegisterForwardRequest;
 import Register.RegisterForwardResponse;
 import Register.RegisterRequest;
 import Register.RegisterResponse;
 
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import java.io.*;
 import java.net.Socket;
 import java.security.*;
+import java.util.Random;
 
 public class ApiGatewayThread implements Runnable {
     private final Socket clientSocket;
@@ -81,64 +83,86 @@ public class ApiGatewayThread implements Runnable {
     }
 
     private Operation processPing() {
-        Object objRequest = null;
+
+        Utils.logDebug("Processing ping pong operation.");
+        // got ping from client
+        byte[] objRequest = null;
         try {
-            objRequest = clientInputStream.readObject();
+            objRequest = (byte[]) clientInputStream.readObject();
         } catch (IOException | ClassNotFoundException e) {
             return new Operation(false, "Could not read object.");
         }
-        if (objRequest instanceof Ping ping) {
-            Utils.logDebug("Got ping request");
-            byte[] dataWithSymmetricKey = ping.data;
-            byte[] fingerprintWithSymmetricKey = ping.fingerPrint;
-            if (ping.encryptedSymmetricKey == null) {
-                return new Operation(false, "Encrypted secret key is empty.");
-            }
-            byte[] encryptedSymmetricKey = ping.encryptedSymmetricKey;
 
-            if (symmetricKey == null) {
-                try {
-                    symmetricKey = Utils.decryptKey(encryptedSymmetricKey, keyPair.getPrivate());
-                } catch (Exception e) {
-                    return new Operation(false, "Could not decrypt symmetric key.");
-                }
-            }
+        // decrypting ping (client is checking if server has the private key)
 
-            var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, keyPair.getPrivate(), clientPublicKey, symmetricKey);
-            if (!operation.isSuccessful()) {
-                Utils.logDebug(operation.message());
-                System.out.println(operation.message());
-                return new Operation(false, operation.message());
-            }
-
-            String data = operation.message();
-            int value;
-            try {
-                value = Integer.parseInt(data);
-            } catch (Exception e) {
-                Utils.logError("Could not parse ping value.");
-                return new Operation(false, "Could not parse ping value.");
-            }
-
-            SecretKey symmetricKey = null;
-            try {
-                symmetricKey = Utils.decryptKey(encryptedSymmetricKey, keyPair.getPrivate());
-            } catch (Exception e) {
-                return new Operation(false, "Could not decrypt symmetric key.");
-            }
-
-            value += 10;
-            var responseOperation = Utils.sendMessage(Pong.class, clientOutputStream, Integer.toString(value), keyPair.getPrivate(), clientPublicKey, symmetricKey, false);
-            if (!responseOperation.isSuccessful()) {
-                Utils.logError("Could not send pong message: " + responseOperation.message());
-                return new Operation(false, responseOperation.message());
-            }
-
-            return new Operation(true, "Ping pong data validation successful.");
-        } else {
-            System.out.println("Unknown message.");
+        int value;
+        try {
+            value = Utils.decryptPing(objRequest, keyPair.getPrivate());
+        } catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException | IllegalBlockSizeException |
+                 BadPaddingException e) {
+            return new Operation(false, "Could not decrypt ping request.");
         }
-        return new Operation(false, "Unknown message.");
+
+        // sending pong to client
+
+        Utils.logDebug("Sending pong response to client.");
+
+        value += 10;
+
+        try {
+            clientOutputStream.writeInt(value);
+        } catch (IOException e) {
+            return new Operation(false, "Could not send pong response.");
+        }
+
+        Utils.logDebug("Sending ping request to client.");
+
+        // sending ping to client(API is checking if client has the private key)
+
+        int valueAPI = new Random().nextInt();
+
+        byte[] pingRequestAPI;
+        try {
+            pingRequestAPI = Utils.encryptPing(valueAPI, clientPublicKey);
+        } catch (NoSuchPaddingException | NoSuchAlgorithmException | InvalidKeyException | IllegalBlockSizeException |
+                 BadPaddingException e) {
+            return new Operation(false, "Could not encrypt ping request.");
+        }
+
+        try {
+            clientOutputStream.writeObject(pingRequestAPI);
+        } catch (IOException e) {
+            return new Operation(false, "Could not send ping request to client.");
+        }
+
+        // got pong from client
+
+        int pongValueClient;
+        try {
+            pongValueClient = clientInputStream.readInt();
+        } catch (IOException e) {
+            return new Operation(false, "Could not read pong response from Client.");
+        }
+
+        Utils.logDebug("Got pong response from client.");
+
+        // validating pong from client
+
+        if (pongValueClient - 10 != valueAPI) {
+            Utils.logError("Ping pong data validation failed.");
+            return new Operation(false, "Ping pong data validation failed.");
+        }
+
+        try {
+            clientOutputStream.writeInt(200);
+            clientOutputStream.flush();
+        } catch (IOException e) {
+            return new Operation(false, "Could not send final response to client.");
+        }
+
+        Utils.logDebug("Ping pong data validation successful.");
+        return new Operation(true, "");
+
     }
 
     private Operation sendToService(Object obj, int port) {
@@ -195,7 +219,7 @@ public class ApiGatewayThread implements Runnable {
         initialConnection();
         var pingOperation = processPing();
         if (!pingOperation.isSuccessful()) {
-            Utils.logError("Could not process ping message: " + pingOperation.message());
+            Utils.logError("Could not process ping pong operation: " + pingOperation.message());
             cleanResources();
             return;
         }
@@ -215,20 +239,25 @@ public class ApiGatewayThread implements Runnable {
                 break;
             }
 
-            if (receivedObject instanceof RegisterRequest req) {
+            if(receivedObject instanceof SymmetricKeyMessage message) {
+                try {
+                    symmetricKey = Utils.decryptKey(message.key, keyPair.getPrivate());
+                } catch (Exception e) {
+                    Utils.logException(e, "Could not decrypt symmetric key.");
+                    break;
+                }
+                Utils.logDebug("Got symmetric key.");
+            }
+            else if (receivedObject instanceof RegisterRequest req) {
                 Utils.logDebug("Got register request");
                 byte[] dataWithSymmetricKey = req.data;
                 byte[] fingerprintWithSymmetricKey = req.fingerPrint;
-                if (req.encryptedSymmetricKey == null && symmetricKey == null) {
-                    Utils.logError("Symmetric key is null and encrypted data is empty.");
-                    break;
-                }
 
-                var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, keyPair.getPrivate(), clientPublicKey, symmetricKey);
+                var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, clientPublicKey, symmetricKey);
 
                 if (!operation.isSuccessful()) {
                     Utils.logDebug(operation.message());
-                    System.out.println(operation.message());
+                    Utils.logInfo(operation.message());
                     break;
                 }
 
@@ -244,15 +273,14 @@ public class ApiGatewayThread implements Runnable {
 
                 RegisterForwardResponse response = receiveMessage();
 
-                if(response == null){
+                if (response == null) {
                     Utils.logError("Could not receive response from service.");
                     break;
                 }
 
-                var responseOperation = Utils.sendMessage(RegisterResponse.class, clientOutputStream, RegisterForwardResponse.ConvertToString(response), keyPair.getPrivate(), clientPublicKey, symmetricKey, false);
+                var responseOperation = Utils.sendMessage(RegisterResponse.class, clientOutputStream, RegisterForwardResponse.ConvertToString(response), keyPair.getPrivate(), symmetricKey);
 
-                if(!responseOperation.isSuccessful())
-                {
+                if (!responseOperation.isSuccessful()) {
                     Utils.logError(responseOperation.message());
                 }
 
