@@ -1,3 +1,5 @@
+import DatabaseFunctions.Register.CheckExistingUser;
+import DatabaseFunctions.Register.InsertNewUser;
 import Register.RegisterForwardRequest;
 import Register.RegisterForwardResponse;
 
@@ -5,46 +7,18 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.net.Socket;
 
-public class RegisterThread implements Runnable {
-    private final Socket socket;
-    private ObjectOutputStream out;
-    private ObjectInputStream in;
+public class RegisterLogic implements Runnable{
+    private final ObjectOutputStream out;
+    private final ObjectInputStream in;
 
-    public RegisterThread(Socket socket) {
-        this.socket = socket;
-    }
-
-    private void prepare() {
-        try {
-            out = new ObjectOutputStream(socket.getOutputStream());
-            in = new ObjectInputStream(socket.getInputStream());
-        } catch (IOException e) {
-            Utils.logException(e, "Error while creating input/output stream");
-            cleanResources();
-        }
-    }
-
-    private void cleanResources() {
-        try {
-            if (in != null) {
-                in.close();
-            }
-            if (out != null) {
-                out.close();
-            }
-            if (socket != null) {
-                socket.close();
-            }
-        } catch (Exception e) {
-            Utils.logException(e, "Error while closing resources.");
-        }
+    public RegisterLogic(ObjectOutputStream out, ObjectInputStream in) {
+        this.out = out;
+        this.in = in;
     }
 
     @Override
     public void run() {
-        prepare();
         Object receivedObject;
         while (true) {
             try {
@@ -64,7 +38,7 @@ public class RegisterThread implements Runnable {
             if (receivedObject instanceof RegisterForwardRequest req) {
                 Utils.logDebug("Got register request.");
                 RegisterForwardResponse response = new RegisterForwardResponse();
-                if(TempDatabaseService.userExist(req.publicKey)){
+                if(CheckExistingUser.checkExistingUser(req.login, req.publicKey)){
                     response.userId = -1;
                     response.code = 400;
                     response.message = "User with this public key is already registered.";
@@ -72,9 +46,8 @@ public class RegisterThread implements Runnable {
                 }
                 else
                 {
-                    TempDatabaseService.addToDB(req.login, req.publicKey);
+                    response.userId= InsertNewUser.insertNewUser(req.login, req.publicKey.toString());
                     response.code = 200;
-                    response.userId = TempDatabaseService.getID();
                     Utils.logDebug("New user with ID: " + response.userId);
                 }
 
@@ -90,7 +63,5 @@ public class RegisterThread implements Runnable {
                 System.out.println("Unknown message.");
             }
         }
-
-        cleanResources();
     }
 }

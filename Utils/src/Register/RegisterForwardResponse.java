@@ -8,11 +8,7 @@ public class RegisterForwardResponse implements Serializable {
     public int userId;
 
     public static String ConvertToString(RegisterForwardResponse response){
-        return response.code +
-                ';' +
-                response.message +
-                ';' +
-                response.userId;
+        return String.format("%d;%s;%d", response.code, response.message, response.userId);
     }
 
     public static RegisterForwardResponse ConvertFromString(String data){

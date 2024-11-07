@@ -8,7 +8,10 @@ public class Main {
         Utils.logInfo("Choose your fighter:");
         Utils.logInfo("1. Register");
         Utils.logInfo("2. Login");
-        Utils.logInfo("3. Exit");
+        Utils.logInfo("3. Chat");
+        Utils.logInfo("4. Post");
+        Utils.logInfo("5. Files");
+        Utils.logInfo("6. Exit");
         Scanner scanner = new Scanner(System.in);
         int choice = scanner.nextInt();
         int port;
@@ -22,6 +25,15 @@ public class Main {
                 port = Utils.Ports.Login.getPort();
                 name = "Login";
                 break;
+            case 3:
+                port = Utils.Ports.Chat.getPort();
+                name = "Chat";
+            case 4:
+                port = Utils.Ports.Posts.getPort();
+                name = "Posts";
+            case 5:
+                port = Utils.Ports.FileServer.getPort();
+                name = "FileServer";
             default:
                 return;
         }
@@ -30,13 +42,7 @@ public class Main {
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             while(true){
                 Socket socket = serverSocket.accept();
-                switch (choice) {
-                    case 1:
-                        new Thread(new RegisterThread(socket)).start();
-                        break;
-                    case 2:
-                        break;
-                }
+                new Thread(new ServiceThread(socket, choice)).start();
             }
         } catch (IOException e) {
             throw new RuntimeException(e);

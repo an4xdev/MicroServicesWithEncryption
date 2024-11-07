@@ -20,8 +20,9 @@ public class Utils {
         ApiGateway(21000),
         Register(21001),
         Login(21002),
-        Post(21003),
-        FileServer(21004);
+        Chat(21003),
+        Posts(21004),
+        FileServer(21005);
 
         private final int port;
 
