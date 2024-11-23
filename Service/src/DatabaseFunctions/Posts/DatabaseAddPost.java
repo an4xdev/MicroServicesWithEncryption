@@ -1,4 +1,4 @@
-package DatabaseFunctions.Register;
+package DatabaseFunctions.Posts;
 
 import Database.DatabaseDriver;
 
@@ -6,8 +6,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
-public class InsertNewUser {
-    public static int insertNewUser(String userName, String publicKey){
+public class DatabaseAddPost {
+    public static boolean addPost(int user_id,String post) {
         Connection connection;
         try {
             connection = DatabaseDriver.getConnection();
@@ -16,20 +16,19 @@ public class InsertNewUser {
         }
         PreparedStatement statement;
         try {
-            statement = connection.prepareStatement("INSERT INTO users(login, pub_key) VALUES (?, ?)");
-            statement.setString(1, userName);
-            statement.setString(2, publicKey);
+            statement = connection.prepareStatement("INSERT INTO posts(user_id, message) VALUES (?, ?)");
+            statement.setInt(1, user_id);
+            statement.setString(2, post);
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
-
+        int rows_inserted = -1;
         try {
-            int result = statement.executeUpdate();
-            statement.close();
-            return result;
+            rows_inserted = statement.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
 
+        return rows_inserted == 1;
     }
 }

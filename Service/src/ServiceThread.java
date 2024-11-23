@@ -47,7 +47,7 @@ public class ServiceThread implements Runnable {
             case 1 -> new RegisterLogic(out, in);
             case 2 -> new LoginLogic(out, in);
             case 3 -> new ChatLogic(out, in);
-            case 4 -> new PostsLogic(out, in);
+            case 4 -> new PostLogic(out, in);
             case 5 -> new FileServerLogic(out, in);
             default -> throw new IllegalStateException("Unexpected value: " + choice);
         };

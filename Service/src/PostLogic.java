@@ -1,22 +1,24 @@
-import DatabaseFunctions.Register.DatabaseCheckExistingUser;
-import DatabaseFunctions.Register.DatabaseInsertNewUser;
-import Register.RegisterForwardRequest;
-import Register.RegisterForwardResponse;
+import DatabaseFunctions.Posts.DatabaseGetLastTenPosts;
+import Post.Get.GetPostsForwardRequest;
+import Post.Get.GetPostsForwardResponse;
 
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
-public class RegisterLogic implements Runnable {
+public class PostLogic implements Runnable{
     private final ObjectOutputStream out;
     private final ObjectInputStream in;
 
-    public RegisterLogic(ObjectOutputStream out, ObjectInputStream in) {
+    public PostLogic(ObjectOutputStream out, ObjectInputStream in) {
         this.out = out;
         this.in = in;
     }
 
+    /**
+     * Runs this operation.
+     */
     @Override
     public void run() {
         Object receivedObject;
@@ -35,19 +37,15 @@ public class RegisterLogic implements Runnable {
                 break;
             }
 
-            if (receivedObject instanceof RegisterForwardRequest req) {
-                Utils.logDebug("Got register request.");
-                RegisterForwardResponse response = new RegisterForwardResponse();
+            if(receivedObject instanceof GetPostsForwardRequest req){
+                Utils.logDebug("Got retrieving posts request.");
+                GetPostsForwardResponse response = new GetPostsForwardResponse();
+                var posts = DatabaseGetLastTenPosts.GetPosts();
+//                TODO: add operation model and process exceptions
                 response.messageId = req.messageId;
-                if (DatabaseCheckExistingUser.checkExistingUser(req.login, req.publicKey)) {
-                    response.code = 400;
-                    response.message = "User with this public key is already registered.";
-                    Utils.logDebug("User with this public key is already registered.");
-                } else {
-                    int userId = DatabaseInsertNewUser.insertNewUser(req.login, req.publicKey.toString());
-                    response.code = 200;
-                    Utils.logDebug("New user with ID: " + userId);
-                }
+                response.code = 200;
+                response.message = "Count of posts: " + posts.size();
+                response.posts = posts;
 
                 try {
                     out.writeObject(response);
@@ -56,8 +54,8 @@ public class RegisterLogic implements Runnable {
                     Utils.logException(e, "Input/Output operations failed.");
                     break;
                 }
-
-            } else {
+            }
+            else {
                 System.out.println("Unknown message.");
             }
         }

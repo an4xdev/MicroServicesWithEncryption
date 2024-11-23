@@ -1,4 +1,4 @@
-package Register;
+package Login;
 
 import Key.KeyUtils;
 
@@ -6,18 +6,18 @@ import java.io.Serializable;
 import java.security.PublicKey;
 import java.util.UUID;
 
-public class RegisterForwardRequest implements Serializable {
+public class LoginForwardRequest implements Serializable {
     public UUID messageId;
     public String login;
     public PublicKey publicKey;
 
-    public static String ConvertToString(RegisterForwardRequest request) {
-        return request.messageId.toString() + ";" + request.login + ";" + request.publicKey.toString();
+    public static String ConvertToString(LoginForwardRequest request) {
+        return request.messageId.toString()+";" + request.login + ";" + request.publicKey.toString();
     }
 
-    public static RegisterForwardRequest ConvertToRegisterForwardRequest(String request) {
+    public static LoginForwardRequest ConvertFromString(String request) {
         String[] parts = request.split(";");
-        RegisterForwardRequest newRequest = new RegisterForwardRequest();
+        LoginForwardRequest newRequest = new LoginForwardRequest();
         newRequest.messageId = UUID.fromString(parts[0]);
         newRequest.login = parts[1];
         newRequest.publicKey = KeyUtils.getPublicKeyFromString(parts[2]);

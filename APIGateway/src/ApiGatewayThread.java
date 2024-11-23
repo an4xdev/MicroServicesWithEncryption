@@ -1,3 +1,28 @@
+import Files.DownloadFile.DownloadFileForwardRequest;
+import Files.DownloadFile.DownloadFileForwardResponse;
+import Files.DownloadFile.DownloadFileRequest;
+import Files.DownloadFile.DownloadFileResponse;
+import Files.GetExisting.GetExistingForwardRequest;
+import Files.GetExisting.GetExistingForwardResponse;
+import Files.GetExisting.GetExistingRequest;
+import Files.GetExisting.GetExistingResponse;
+import Files.Send.SendFileForwardRequest;
+import Files.Send.SendFileForwardResponse;
+import Files.Send.SendFileRequest;
+import Files.Send.SendFileResponse;
+import Login.LoginForwardRequest;
+import Login.LoginForwardResponse;
+import Login.LoginRequest;
+import Login.LoginResponse;
+import Messages.Message;
+import Post.Add.AddPostForwardRequest;
+import Post.Add.AddPostForwardResponse;
+import Post.Add.AddPostRequest;
+import Post.Add.AddPostResponse;
+import Post.Get.GetPostsForwardRequest;
+import Post.Get.GetPostsForwardResponse;
+import Post.Get.GetPostsRequest;
+import Post.Get.GetPostsResponse;
 import Register.RegisterForwardRequest;
 import Register.RegisterForwardResponse;
 import Register.RegisterRequest;
@@ -224,6 +249,7 @@ public class ApiGatewayThread implements Runnable {
             return;
         }
         Object receivedObject;
+        label:
         while (true) {
             try {
                 if ((receivedObject = clientInputStream.readObject()) == null) break;
@@ -239,7 +265,7 @@ public class ApiGatewayThread implements Runnable {
                 break;
             }
 
-            if(receivedObject instanceof SymmetricKeyMessage message) {
+            if (receivedObject instanceof SymmetricKeyMessage message) {
                 try {
                     symmetricKey = Utils.decryptKey(message.key, keyPair.getPrivate());
                 } catch (Exception e) {
@@ -247,45 +273,234 @@ public class ApiGatewayThread implements Runnable {
                     break;
                 }
                 Utils.logDebug("Got symmetric key.");
-            }
-            else if (receivedObject instanceof RegisterRequest req) {
-                Utils.logDebug("Got register request");
-                byte[] dataWithSymmetricKey = req.data;
-                byte[] fingerprintWithSymmetricKey = req.fingerPrint;
+            } else if (receivedObject instanceof Message mem) {
+                byte[] dataWithSymmetricKey = mem.data;
+                byte[] fingerprintWithSymmetricKey = mem.fingerPrint;
+                switch (receivedObject) {
+                    case RegisterRequest _ -> {
+                        Utils.logDebug("Got register request");
 
-                var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, clientPublicKey, symmetricKey);
+                        var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, clientPublicKey, symmetricKey);
 
-                if (!operation.isSuccessful()) {
-                    Utils.logDebug(operation.message());
-                    Utils.logInfo(operation.message());
-                    break;
+                        if (!operation.isSuccessful()) {
+                            Utils.logDebug(operation.message());
+                            Utils.logInfo(operation.message());
+                            break label;
+                        }
+
+                        var request = RegisterForwardRequest.ConvertToRegisterForwardRequest(operation.message());
+
+                        var sendToServiceOperation = sendToService(request, Utils.Ports.Register.getPort());
+                        if (!sendToServiceOperation.isSuccessful()) {
+                            Utils.logError(sendToServiceOperation.message());
+                            break label;
+                        }
+
+                        RegisterForwardResponse response = receiveMessage();
+
+                        if (response == null) {
+                            Utils.logError("Could not receive response from service.");
+                            break label;
+                        }
+
+                        var responseOperation = Utils.sendMessage(RegisterResponse.class, clientOutputStream, RegisterForwardResponse.ConvertToString(response), keyPair.getPrivate(), symmetricKey);
+
+                        if (!responseOperation.isSuccessful()) {
+                            Utils.logError(responseOperation.message());
+                        }
+
+                    }
+                    case LoginRequest _ -> {
+                        Utils.logDebug("Got Login request");
+                        var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, clientPublicKey, symmetricKey);
+
+                        if (!operation.isSuccessful()) {
+                            Utils.logDebug(operation.message());
+                            Utils.logInfo(operation.message());
+                            break label;
+                        }
+
+                        var request = LoginForwardRequest.ConvertFromString(operation.message());
+
+                        var sendToServiceOperation = sendToService(request, Utils.Ports.Login.getPort());
+                        if (!sendToServiceOperation.isSuccessful()) {
+                            Utils.logError(sendToServiceOperation.message());
+                            break label;
+                        }
+
+                        LoginForwardResponse response = receiveMessage();
+
+                        if (response == null) {
+                            Utils.logError("Could not receive response from service.");
+                            break label;
+                        }
+
+                        var responseOperation = Utils.sendMessage(LoginResponse.class, clientOutputStream, LoginForwardResponse.ConvertToString(response), keyPair.getPrivate(), symmetricKey);
+
+                        if (!responseOperation.isSuccessful()) {
+                            Utils.logError(responseOperation.message());
+                        }
+                    }
+                    case AddPostRequest _ -> {
+                        Utils.logDebug("Got add post request");
+                        var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, clientPublicKey, symmetricKey);
+
+                        if (!operation.isSuccessful()) {
+                            Utils.logDebug(operation.message());
+                            Utils.logInfo(operation.message());
+                            break label;
+                        }
+
+                        var request = AddPostForwardRequest.ConvertFromString(operation.message());
+
+                        var sendToServiceOperation = sendToService(request, Utils.Ports.Chat.getPort());
+                        if (!sendToServiceOperation.isSuccessful()) {
+                            Utils.logError(sendToServiceOperation.message());
+                            break label;
+                        }
+
+                        AddPostForwardResponse response = receiveMessage();
+
+                        if (response == null) {
+                            Utils.logError("Could not receive response from service.");
+                            break label;
+                        }
+
+                        var responseOperation = Utils.sendMessage(AddPostResponse.class, clientOutputStream, AddPostForwardResponse.ConvertToString(response), keyPair.getPrivate(), symmetricKey);
+
+                        if (!responseOperation.isSuccessful()) {
+                            Utils.logError(responseOperation.message());
+                        }
+                    }
+                    case GetPostsRequest _ -> {
+                        Utils.logDebug("Got retrieve post request");
+                        var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, clientPublicKey, symmetricKey);
+
+                        if (!operation.isSuccessful()) {
+                            Utils.logDebug(operation.message());
+                            Utils.logInfo(operation.message());
+                            break label;
+                        }
+
+                        var request = GetPostsForwardRequest.ConvertFromString(operation.message());
+
+                        var sendToServiceOperation = sendToService(request, Utils.Ports.Posts.getPort());
+                        if (!sendToServiceOperation.isSuccessful()) {
+                            Utils.logError(sendToServiceOperation.message());
+                            break label;
+                        }
+
+                        GetPostsForwardResponse response = receiveMessage();
+
+                        if (response == null) {
+                            Utils.logError("Could not receive response from service.");
+                            break label;
+                        }
+
+                        var responseOperation = Utils.sendMessage(GetPostsResponse.class, clientOutputStream, GetPostsForwardResponse.ConvertToString(response), keyPair.getPrivate(), symmetricKey);
+
+                        if (!responseOperation.isSuccessful()) {
+                            Utils.logError(responseOperation.message());
+                        }
+
+                    }
+                    case SendFileRequest _ -> {
+                        Utils.logDebug("Got send file request");
+                        var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, clientPublicKey, symmetricKey);
+
+                        if (!operation.isSuccessful()) {
+                            Utils.logDebug(operation.message());
+                            Utils.logInfo(operation.message());
+                            break label;
+                        }
+
+                        var request = SendFileForwardRequest.ConvertFromString(operation.message());
+
+                        var sendToServiceOperation = sendToService(request, Utils.Ports.FileServer.getPort());
+                        if (!sendToServiceOperation.isSuccessful()) {
+                            Utils.logError(sendToServiceOperation.message());
+                            break label;
+                        }
+
+                        SendFileForwardResponse response = receiveMessage();
+
+                        if (response == null) {
+                            Utils.logError("Could not receive response from service.");
+                            break label;
+                        }
+
+                        var responseOperation = Utils.sendMessage(SendFileResponse.class, clientOutputStream, SendFileForwardResponse.ConvertToString(response), keyPair.getPrivate(), symmetricKey);
+
+                        if (!responseOperation.isSuccessful()) {
+                            Utils.logError(responseOperation.message());
+                        }
+                    }
+                    case GetExistingRequest _ -> {
+                        Utils.logDebug("Got get existing files request");
+                        var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, clientPublicKey, symmetricKey);
+
+                        if (!operation.isSuccessful()) {
+                            Utils.logDebug(operation.message());
+                            Utils.logInfo(operation.message());
+                            break label;
+                        }
+
+                        var request = GetExistingForwardRequest.ConvertFromString(operation.message());
+
+                        var sendToServiceOperation = sendToService(request, Utils.Ports.FileServer.getPort());
+                        if (!sendToServiceOperation.isSuccessful()) {
+                            Utils.logError(sendToServiceOperation.message());
+                            break label;
+                        }
+
+                        GetExistingForwardResponse response = receiveMessage();
+
+                        if (response == null) {
+                            Utils.logError("Could not receive response from service.");
+                            break label;
+                        }
+
+                        var responseOperation = Utils.sendMessage(GetExistingResponse.class, clientOutputStream, GetExistingForwardResponse.ConvertToString(response), keyPair.getPrivate(), symmetricKey);
+
+                        if (!responseOperation.isSuccessful()) {
+                            Utils.logError(responseOperation.message());
+                        }
+                    }
+                    case DownloadFileRequest _ -> {
+                        Utils.logDebug("Got download file request");
+                        var operation = Utils.processMessage(dataWithSymmetricKey, fingerprintWithSymmetricKey, clientPublicKey, symmetricKey);
+
+                        if (!operation.isSuccessful()) {
+                            Utils.logDebug(operation.message());
+                            Utils.logInfo(operation.message());
+                            break label;
+                        }
+
+                        var request = DownloadFileForwardRequest.ConvertFromString(operation.message());
+
+                        var sendToServiceOperation = sendToService(request, Utils.Ports.FileServer.getPort());
+                        if (!sendToServiceOperation.isSuccessful()) {
+                            Utils.logError(sendToServiceOperation.message());
+                            break label;
+                        }
+
+                        DownloadFileForwardResponse response = receiveMessage();
+
+                        if (response == null) {
+                            Utils.logError("Could not receive response from service.");
+                            break label;
+                        }
+
+                        var responseOperation = Utils.sendMessage(DownloadFileResponse.class, clientOutputStream, DownloadFileForwardResponse.ConvertToString(response), keyPair.getPrivate(), symmetricKey);
+
+                        if (!responseOperation.isSuccessful()) {
+                            Utils.logError(responseOperation.message());
+                        }
+                    }
+                    default -> System.out.println("Unknown message.");
                 }
-
-                var request = new RegisterForwardRequest();
-                request.login = operation.message();
-                request.publicKey = clientPublicKey;
-
-                var sendToServiceOperation = sendToService(request, Utils.Ports.Register.getPort());
-                if (!sendToServiceOperation.isSuccessful()) {
-                    Utils.logError(sendToServiceOperation.message());
-                    break;
-                }
-
-                RegisterForwardResponse response = receiveMessage();
-
-                if (response == null) {
-                    Utils.logError("Could not receive response from service.");
-                    break;
-                }
-
-                var responseOperation = Utils.sendMessage(RegisterResponse.class, clientOutputStream, RegisterForwardResponse.ConvertToString(response), keyPair.getPrivate(), symmetricKey);
-
-                if (!responseOperation.isSuccessful()) {
-                    Utils.logError(responseOperation.message());
-                }
-
             } else {
-                System.out.println("Unknown message.");
+                System.out.println("Unknown data.");
             }
         }
 

@@ -6,6 +6,8 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
 
 public class Utils {
 

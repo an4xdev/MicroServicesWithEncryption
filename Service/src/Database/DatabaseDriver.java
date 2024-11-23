@@ -17,7 +17,7 @@ public class DatabaseDriver {
         conn = DriverManager.getConnection(url, props);
     }
 
-    public static Connection getConnection() throws SQLException {
+    public static synchronized Connection getConnection() throws SQLException {
         if(conn == null){
             connect();
         }

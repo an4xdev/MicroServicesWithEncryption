@@ -1,22 +1,23 @@
 package Register;
 
 import java.io.Serializable;
+import java.util.UUID;
 
 public class RegisterForwardResponse implements Serializable {
+    public UUID messageId;
     public int code;
     public String message;
-    public int userId;
 
     public static String ConvertToString(RegisterForwardResponse response){
-        return String.format("%d;%s;%d", response.code, response.message, response.userId);
+        return String.format("%s;%d;%s", response.messageId.toString() ,response.code, response.message);
     }
 
     public static RegisterForwardResponse ConvertFromString(String data){
         RegisterForwardResponse response = new RegisterForwardResponse();
         String[] list = data.split(";");
-        response.code = Integer.parseInt(list[0]);
-        response.message = list[1];
-        response.userId = Integer.parseInt(list[2]);
+        response.messageId = UUID.fromString(list[0]);
+        response.code = Integer.parseInt(list[1]);
+        response.message = list[2];
         return response;
     }
 }
