@@ -1,13 +1,12 @@
 package Login;
 
 import Key.KeyUtils;
+import Messages.BaseForwardRequest;
 
-import java.io.Serializable;
 import java.security.PublicKey;
 import java.util.UUID;
 
-public class LoginForwardRequest implements Serializable {
-    public UUID messageId;
+public class LoginForwardRequest extends BaseForwardRequest {
     public String login;
     public PublicKey publicKey;
 

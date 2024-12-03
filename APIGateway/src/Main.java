@@ -1,3 +1,6 @@
+import Enums.Ports;
+import Enums.Services;
+
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -5,6 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HashMap;
 
 public class Main {
 
@@ -34,6 +39,15 @@ public class Main {
             }
         }
 
+        ConnectionToAgent connectionToAgent = new ConnectionToAgent(Ports.Agent.getPort(), "localhost");
+        new Thread(connectionToAgent).start();
+
+        HashMap<Services, ArrayList<ConnectionToService>> connections = new HashMap<>();
+
+        for (Services service : Services.values()) {
+            connections.put(service, new ArrayList<>());
+        }
+
         try {
             try (ServerSocket serverSocket = new ServerSocket(port)) {
                 Utils.logInfo("Api Gateway started on port " + port);
@@ -42,7 +56,7 @@ public class Main {
                         Socket clientSocket = serverSocket.accept();
                         Utils.logDebug("Connection established with client");
                         Utils.logDebug("Client port: " + clientSocket.getPort());
-                        new Thread(new ApiGatewayThread(clientSocket, keyPair)).start();
+                        new Thread(new ApiGatewayThread(clientSocket, keyPair, connectionToAgent, connections)).start();
                     }
                 } catch (IOException e) {
                     Utils.logException(e, "Error while creating socket from incoming connection");

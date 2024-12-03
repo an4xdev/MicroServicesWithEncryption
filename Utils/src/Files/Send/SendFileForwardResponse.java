@@ -1,12 +1,10 @@
 package Files.Send;
 
-import java.io.Serializable;
+import Messages.BaseForwardResponse;
+
 import java.util.UUID;
 
-public class SendFileForwardResponse implements Serializable {
-    public UUID messageId;
-    public int code;
-    public String message;
+public class SendFileForwardResponse extends BaseForwardResponse {
 
     public static String ConvertToString(SendFileForwardResponse sendFileForwardResponse) {
         return sendFileForwardResponse.messageId + ";" + sendFileForwardResponse.code + ";" + sendFileForwardResponse.message;

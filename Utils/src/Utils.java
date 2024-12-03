@@ -18,25 +18,6 @@ public class Utils {
         SecretKeyError
     }
 
-    public static enum Ports {
-        ApiGateway(21000),
-        Register(21001),
-        Login(21002),
-        Chat(21003),
-        Posts(21004),
-        FileServer(21005);
-
-        private final int port;
-
-        Ports(int port) {
-            this.port = port;
-        }
-
-        public int getPort() {
-            return port;
-        }
-    }
-
     public static final String RESET = "\033[0m";
     public static final String RED = "\033[0;31m";
     public static final String YELLOW = "\033[0;33m";

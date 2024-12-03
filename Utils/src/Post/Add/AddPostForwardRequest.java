@@ -1,10 +1,11 @@
 package Post.Add;
 
+import Messages.BaseForwardRequest;
+
 import java.io.Serializable;
 import java.util.UUID;
 
-public class AddPostForwardRequest implements Serializable {
-    public UUID messageId;
+public class AddPostForwardRequest extends BaseForwardRequest {
     public int userId;
     public String post;
 

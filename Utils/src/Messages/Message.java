@@ -1,7 +1,6 @@
 package Messages;
 
 import java.io.Serializable;
-import java.util.Optional;
 
 public class Message implements Serializable {
     public byte[] data;

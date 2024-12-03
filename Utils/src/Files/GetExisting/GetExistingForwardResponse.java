@@ -1,14 +1,13 @@
 package Files.GetExisting;
 
+import Messages.BaseForwardResponse;
+
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.UUID;
 
-public class GetExistingForwardResponse implements Serializable {
-    public UUID messageId;
-    public int code;
-    public String message;
+public class GetExistingForwardResponse extends BaseForwardResponse {
     public ArrayList<String> fileNames;
 
     public static String ConvertToString(GetExistingForwardResponse getExistingForwardResponse) {

@@ -1,11 +1,15 @@
 package Agent.Requests;
 
 import Agent.AgentMessage;
+import Enums.Services;
+
+import java.util.UUID;
 
 public class ConnectToService extends AgentMessage {
-    public String serviceName;
+    public Services service;
 
-    public ConnectToService(String serviceName) {
-        this.serviceName = serviceName;
+    public ConnectToService(UUID messageId, Services service) {
+        this.messageId = messageId;
+        this.service = service;
     }
 }

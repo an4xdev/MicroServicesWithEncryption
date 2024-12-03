@@ -1,12 +1,11 @@
 package Files.DownloadFile;
 
+import Messages.BaseForwardResponse;
+
 import java.util.UUID;
 
-public class DownloadFileForwardResponse {
-    public UUID messageId;
-    public int code;
+public class DownloadFileForwardResponse  extends BaseForwardResponse {
     public String fileName;
-    public String message;
     public String fileData;
 
     public static String ConvertToString(DownloadFileForwardResponse downloadFileForwardResponse) {

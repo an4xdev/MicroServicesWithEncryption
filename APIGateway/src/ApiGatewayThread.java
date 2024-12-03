@@ -1,3 +1,6 @@
+import Agent.Requests.ConnectToService;
+import Agent.Responses.ConnectData;
+import Enums.Services;
 import Files.DownloadFile.DownloadFileForwardRequest;
 import Files.DownloadFile.DownloadFileForwardResponse;
 import Files.DownloadFile.DownloadFileRequest;
@@ -14,6 +17,7 @@ import Login.LoginForwardRequest;
 import Login.LoginForwardResponse;
 import Login.LoginRequest;
 import Login.LoginResponse;
+import Messages.BaseForwardRequest;
 import Messages.Message;
 import Post.Add.AddPostForwardRequest;
 import Post.Add.AddPostForwardResponse;
@@ -35,24 +39,28 @@ import javax.crypto.SecretKey;
 import java.io.*;
 import java.net.Socket;
 import java.security.*;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Random;
+import java.util.UUID;
 
 public class ApiGatewayThread implements Runnable {
     private final Socket clientSocket;
     private ObjectInputStream clientInputStream;
     private ObjectOutputStream clientOutputStream;
 
-    private Socket serviceSocket;
-    private ObjectInputStream serviceInputStream;
-    private ObjectOutputStream serviceOutputStream;
-
     private final KeyPair keyPair;
     private PublicKey clientPublicKey;
     private SecretKey symmetricKey;
 
-    public ApiGatewayThread(Socket socket, KeyPair keyPair) {
+    private final ConnectionToAgent connectionToAgent;
+    private final HashMap<Services, ArrayList<ConnectionToService>> connections;
+
+    public ApiGatewayThread(Socket socket, KeyPair keyPair, ConnectionToAgent connectionToAgent, HashMap<Services, ArrayList<ConnectionToService>> connections) {
         this.clientSocket = socket;
         this.keyPair = keyPair;
+        this.connectionToAgent = connectionToAgent;
+        this.connections = connections;
     }
 
     private void prepare() {
@@ -190,52 +198,63 @@ public class ApiGatewayThread implements Runnable {
 
     }
 
-    private Operation sendToService(Object obj, int port) {
-        try {
-            serviceSocket = new Socket("localhost", port);
-        } catch (IOException e) {
-            return new Operation(false, "Cannot connect to service on port: " + port);
+    private Operation sendToService(BaseForwardRequest request, Services service) {
+
+        ConnectionToService serviceRunnable = null;
+
+        synchronized (connections) {
+            var list = connections.get(service);
+            if(!list.isEmpty()) {
+                serviceRunnable = list.getFirst();
+            }
+            connections.notifyAll();
         }
 
-        try {
-            serviceOutputStream = new ObjectOutputStream(serviceSocket.getOutputStream());
-            serviceInputStream = new ObjectInputStream(serviceSocket.getInputStream());
-        } catch (IOException e) {
-            return new Operation(false, "Cannot establish connection.");
+        if(serviceRunnable == null) {
+            var connectionRequest = new ConnectToService(request.messageId, service);
+            connectionToAgent.sendMessageToAgent(connectionRequest);
+
+            ConnectData response;
+            try {
+                response = connectionToAgent.receiveMessageFromAgent(request.messageId, ConnectData.class);
+            } catch (InterruptedException e) {
+                return new Operation(false, "Could not receive response from agent.");
+            }
+
+            var connectionToService = new ConnectionToService(response.port, response.host);
+            synchronized (connections) {
+                connections.get(service).add(connectionToService);
+                connections.notifyAll();
+            }
+            serviceRunnable = connectionToService;
         }
 
-        try {
-            serviceOutputStream.writeObject(obj);
-            serviceOutputStream.flush();
-        } catch (IOException e) {
-            return new Operation(false, "Cannot send message.");
-        }
+        serviceRunnable.sendMessageToService(request);
 
         return new Operation(true, "");
     }
 
-    private <T> T receiveMessage() {
-        if (serviceSocket == null || serviceOutputStream == null) {
-            Utils.logError("Output objects aren't closed.");
-            return null;
-        }
-        T obj = null;
-        try {
-            obj = (T) serviceInputStream.readObject();
-        } catch (IOException | ClassNotFoundException e) {
-            Utils.logException(e, "Input/output operations failed.");
+    private <T> T receiveMessage(UUID messageId, Class<T> clazz, Services service) {
+
+        ConnectionToService serviceRunnable = null;
+
+        synchronized (connections) {
+            var list = connections.get(service);
+            if(!list.isEmpty()) {
+                serviceRunnable = list.getFirst();
+            }
+            connections.notifyAll();
         }
 
-        try {
-            serviceInputStream.close();
-            serviceOutputStream.close();
-            serviceSocket.close();
-        } catch (IOException e) {
-            Utils.logException(e, "Closing connection failed.");
+        if(serviceRunnable == null) {
             return null;
         }
 
-        return obj;
+        try {
+            return serviceRunnable.getMessageFromService(messageId, clazz);
+        } catch (InterruptedException e) {
+            return null;
+        }
     }
 
     @Override
@@ -290,13 +309,13 @@ public class ApiGatewayThread implements Runnable {
 
                         var request = RegisterForwardRequest.ConvertToRegisterForwardRequest(operation.message());
 
-                        var sendToServiceOperation = sendToService(request, Utils.Ports.Register.getPort());
+                        var sendToServiceOperation = sendToService(request, Services.Register);
                         if (!sendToServiceOperation.isSuccessful()) {
                             Utils.logError(sendToServiceOperation.message());
                             break label;
                         }
 
-                        RegisterForwardResponse response = receiveMessage();
+                        RegisterForwardResponse response = receiveMessage(request.messageId, RegisterForwardResponse.class, Services.Register);
 
                         if (response == null) {
                             Utils.logError("Could not receive response from service.");
@@ -322,13 +341,13 @@ public class ApiGatewayThread implements Runnable {
 
                         var request = LoginForwardRequest.ConvertFromString(operation.message());
 
-                        var sendToServiceOperation = sendToService(request, Utils.Ports.Login.getPort());
+                        var sendToServiceOperation = sendToService(request, Services.Login);
                         if (!sendToServiceOperation.isSuccessful()) {
                             Utils.logError(sendToServiceOperation.message());
                             break label;
                         }
 
-                        LoginForwardResponse response = receiveMessage();
+                        LoginForwardResponse response = receiveMessage(request.messageId, LoginForwardResponse.class, Services.Login);
 
                         if (response == null) {
                             Utils.logError("Could not receive response from service.");
@@ -353,13 +372,13 @@ public class ApiGatewayThread implements Runnable {
 
                         var request = AddPostForwardRequest.ConvertFromString(operation.message());
 
-                        var sendToServiceOperation = sendToService(request, Utils.Ports.Chat.getPort());
+                        var sendToServiceOperation = sendToService(request, Services.Chat);
                         if (!sendToServiceOperation.isSuccessful()) {
                             Utils.logError(sendToServiceOperation.message());
                             break label;
                         }
 
-                        AddPostForwardResponse response = receiveMessage();
+                        AddPostForwardResponse response = receiveMessage(request.messageId, AddPostForwardResponse.class, Services.Chat);
 
                         if (response == null) {
                             Utils.logError("Could not receive response from service.");
@@ -384,13 +403,13 @@ public class ApiGatewayThread implements Runnable {
 
                         var request = GetPostsForwardRequest.ConvertFromString(operation.message());
 
-                        var sendToServiceOperation = sendToService(request, Utils.Ports.Posts.getPort());
+                        var sendToServiceOperation = sendToService(request, Services.Posts);
                         if (!sendToServiceOperation.isSuccessful()) {
                             Utils.logError(sendToServiceOperation.message());
                             break label;
                         }
 
-                        GetPostsForwardResponse response = receiveMessage();
+                        GetPostsForwardResponse response = receiveMessage(request.messageId, GetPostsForwardResponse.class, Services.Posts);
 
                         if (response == null) {
                             Utils.logError("Could not receive response from service.");
@@ -416,13 +435,13 @@ public class ApiGatewayThread implements Runnable {
 
                         var request = SendFileForwardRequest.ConvertFromString(operation.message());
 
-                        var sendToServiceOperation = sendToService(request, Utils.Ports.FileServer.getPort());
+                        var sendToServiceOperation = sendToService(request, Services.File);
                         if (!sendToServiceOperation.isSuccessful()) {
                             Utils.logError(sendToServiceOperation.message());
                             break label;
                         }
 
-                        SendFileForwardResponse response = receiveMessage();
+                        SendFileForwardResponse response = receiveMessage(request.messageId, SendFileForwardResponse.class, Services.File);
 
                         if (response == null) {
                             Utils.logError("Could not receive response from service.");
@@ -447,13 +466,13 @@ public class ApiGatewayThread implements Runnable {
 
                         var request = GetExistingForwardRequest.ConvertFromString(operation.message());
 
-                        var sendToServiceOperation = sendToService(request, Utils.Ports.FileServer.getPort());
+                        var sendToServiceOperation = sendToService(request, Services.File);
                         if (!sendToServiceOperation.isSuccessful()) {
                             Utils.logError(sendToServiceOperation.message());
                             break label;
                         }
 
-                        GetExistingForwardResponse response = receiveMessage();
+                        GetExistingForwardResponse response = receiveMessage(request.messageId, GetExistingForwardResponse.class, Services.File);
 
                         if (response == null) {
                             Utils.logError("Could not receive response from service.");
@@ -478,13 +497,13 @@ public class ApiGatewayThread implements Runnable {
 
                         var request = DownloadFileForwardRequest.ConvertFromString(operation.message());
 
-                        var sendToServiceOperation = sendToService(request, Utils.Ports.FileServer.getPort());
+                        var sendToServiceOperation = sendToService(request, Services.File);
                         if (!sendToServiceOperation.isSuccessful()) {
                             Utils.logError(sendToServiceOperation.message());
                             break label;
                         }
 
-                        DownloadFileForwardResponse response = receiveMessage();
+                        DownloadFileForwardResponse response = receiveMessage(request.messageId, DownloadFileForwardResponse.class, Services.File);
 
                         if (response == null) {
                             Utils.logError("Could not receive response from service.");
@@ -497,7 +516,11 @@ public class ApiGatewayThread implements Runnable {
                             Utils.logError(responseOperation.message());
                         }
                     }
-                    default -> System.out.println("Unknown message.");
+                    default -> {
+                        System.out.println("Unknown message.");
+                        cleanResources();
+                        break label;
+                    }
                 }
             } else {
                 System.out.println("Unknown data.");

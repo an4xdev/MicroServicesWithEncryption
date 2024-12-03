@@ -1,13 +1,13 @@
 package Register;
 
 import Key.KeyUtils;
+import Messages.BaseForwardRequest;
 
 import java.io.Serializable;
 import java.security.PublicKey;
 import java.util.UUID;
 
-public class RegisterForwardRequest implements Serializable {
-    public UUID messageId;
+public class RegisterForwardRequest extends BaseForwardRequest {
     public String login;
     public PublicKey publicKey;
 

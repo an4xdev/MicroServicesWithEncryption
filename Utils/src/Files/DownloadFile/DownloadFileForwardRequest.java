@@ -1,10 +1,10 @@
 package Files.DownloadFile;
 
-import java.io.Serializable;
+import Messages.BaseForwardRequest;
+
 import java.util.UUID;
 
-public class DownloadFileForwardRequest implements Serializable {
-    public UUID messageId;
+public class DownloadFileForwardRequest extends BaseForwardRequest {
     public String fileName;
 
     public static String ConvertToString(DownloadFileForwardRequest request) {

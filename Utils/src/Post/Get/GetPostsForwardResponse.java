@@ -1,15 +1,13 @@
 package Post.Get;
 
+import Messages.BaseForwardResponse;
 import Model.PostModel;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.UUID;
 
-public class GetPostsForwardResponse implements Serializable {
-    public UUID messageId;
-    public int code;
-    public String message;
+public class GetPostsForwardResponse extends BaseForwardResponse {
     public ArrayList<PostModel> posts;
 
     public static String ConvertToString(GetPostsForwardResponse response){

@@ -1,10 +1,11 @@
 package Post.Get;
 
+import Messages.BaseForwardRequest;
+
 import java.io.Serializable;
 import java.util.UUID;
 
-public class GetPostsForwardRequest implements Serializable {
-    public UUID messageId;
+public class GetPostsForwardRequest extends BaseForwardRequest {
 
     public static GetPostsForwardRequest ConvertFromString(String data) {
         GetPostsForwardRequest request = new GetPostsForwardRequest();

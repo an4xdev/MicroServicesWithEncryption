@@ -1,12 +1,11 @@
 package Register;
 
+import Messages.BaseForwardResponse;
+
 import java.io.Serializable;
 import java.util.UUID;
 
-public class RegisterForwardResponse implements Serializable {
-    public UUID messageId;
-    public int code;
-    public String message;
+public class RegisterForwardResponse extends BaseForwardResponse {
 
     public static String ConvertToString(RegisterForwardResponse response){
         return String.format("%s;%d;%s", response.messageId.toString() ,response.code, response.message);

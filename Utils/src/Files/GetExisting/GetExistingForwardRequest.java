@@ -1,10 +1,10 @@
 package Files.GetExisting;
 
-import java.io.Serializable;
+import Messages.BaseForwardRequest;
+
 import java.util.UUID;
 
-public class GetExistingForwardRequest implements Serializable {
-    public UUID messageId;
+public class GetExistingForwardRequest extends BaseForwardRequest {
 
     public static String ConvertToString(GetExistingForwardRequest getExistingForwardRequest) {
         return getExistingForwardRequest.messageId.toString();

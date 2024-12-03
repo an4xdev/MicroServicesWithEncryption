@@ -1,12 +1,11 @@
 package Post.Add;
 
+import Messages.BaseForwardResponse;
+
 import java.io.Serializable;
 import java.util.UUID;
 
-public class AddPostForwardResponse implements Serializable {
-    public UUID messageId;
-    public int code;
-    public String message;
+public class AddPostForwardResponse extends BaseForwardResponse {
 
     public static String ConvertToString(AddPostForwardResponse response) {
         return String.format("%s;%d;%s", response.messageId.toString(), response.code, response.message);

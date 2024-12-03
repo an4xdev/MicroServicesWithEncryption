@@ -9,11 +9,11 @@ import java.io.*;
 import java.util.ArrayList;
 import java.util.Base64;
 
-public class FileServerLogic implements Runnable {
+public class FileLogic implements Runnable {
     private final ObjectOutputStream out;
     private final ObjectInputStream in;
 
-    public FileServerLogic(ObjectOutputStream out, ObjectInputStream in) {
+    public FileLogic(ObjectOutputStream out, ObjectInputStream in) {
         this.out = out;
         this.in = in;
     }

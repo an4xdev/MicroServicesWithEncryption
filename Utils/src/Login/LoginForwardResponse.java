@@ -1,12 +1,11 @@
 package Login;
 
+import Messages.BaseForwardResponse;
+
 import java.io.Serializable;
 import java.util.UUID;
 
-public class LoginForwardResponse implements Serializable {
-    public UUID messageId;
-    public int code;
-    public String message;
+public class LoginForwardResponse extends BaseForwardResponse {
     public int userId;
 
     public static String ConvertToString(LoginForwardResponse response){

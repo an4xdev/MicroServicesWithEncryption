@@ -11,11 +11,6 @@ public class Test {
         ProcessBuilder builder = new ProcessBuilder(arguments).inheritIO().redirectErrorStream(true);
         var process = builder.start();
 
-        for (int i = 0; i < 10; i++) {
-            System.out.println(i);
-            Thread.sleep(1000);
-        }
-
-        process.destroy();
+        process.waitFor();
     }
 }
