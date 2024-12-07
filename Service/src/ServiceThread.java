@@ -8,6 +8,7 @@ public class ServiceThread implements Runnable {
     private ObjectOutputStream out;
     private ObjectInputStream in;
     private final int choice;
+    private Thread thread;
 
     public ServiceThread(Socket socket, int choice) {
         this.socket = socket;
@@ -40,6 +41,11 @@ public class ServiceThread implements Runnable {
         }
     }
 
+    public void stop() {
+        cleanResources();
+        thread.interrupt();
+    }
+
     @Override
     public void run() {
         prepare();
@@ -52,11 +58,11 @@ public class ServiceThread implements Runnable {
             default -> throw new IllegalStateException("Unexpected value: " + choice);
         };
 
-        Thread foo = new Thread(logic);
-        foo.start();
-        var state = foo.getState();
+        thread = new Thread(logic);
+        thread.start();
+        var state = thread.getState();
         while (state != Thread.State.TERMINATED) {
-            state = foo.getState();
+            state = thread.getState();
         }
         cleanResources();
     }

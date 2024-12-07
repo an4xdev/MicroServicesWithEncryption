@@ -1,3 +1,4 @@
+import Agent.Requests.RegisterToAgent;
 import Enums.Ports;
 import Enums.Services;
 
@@ -10,13 +11,14 @@ import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.UUID;
 
 public class Main {
 
     private static final String FILE_PATH = "keys.txt";
 
-    public static void main(String[] args) throws NoSuchAlgorithmException {
-        int port = Utils.Ports.ApiGateway.getPort();
+    public static void main(String[] args) {
+        int port = Ports.ApiGateway.getPort();
 
         KeyPair keyPair = null;
         if (Files.exists(Paths.get(FILE_PATH))) {
@@ -33,20 +35,29 @@ public class Main {
                 return;
             }
             if (keyPair != null) {
-                if(!saveKeyPairToFile(keyPair)) {
+                if (!saveKeyPairToFile(keyPair)) {
                     return;
                 }
             }
         }
 
-        ConnectionToAgent connectionToAgent = new ConnectionToAgent(Ports.Agent.getPort(), "localhost");
-        new Thread(connectionToAgent).start();
+        UUID apiGatewayId = UUID.randomUUID();
 
         HashMap<Services, ArrayList<ConnectionToService>> connections = new HashMap<>();
 
         for (Services service : Services.values()) {
             connections.put(service, new ArrayList<>());
         }
+
+        ConnectionToAgent connectionToAgent = new ConnectionToAgent(
+                Ports.Agent.getPort(), "localhost",
+                connections,
+                apiGatewayId
+        );
+
+        new Thread(connectionToAgent).start();
+
+        connectionToAgent.sendMessageToAgent(new RegisterToAgent(UUID.randomUUID(), apiGatewayId, "ApiGateway"));
 
         try {
             try (ServerSocket serverSocket = new ServerSocket(port)) {
@@ -56,7 +67,9 @@ public class Main {
                         Socket clientSocket = serverSocket.accept();
                         Utils.logDebug("Connection established with client");
                         Utils.logDebug("Client port: " + clientSocket.getPort());
-                        new Thread(new ApiGatewayThread(clientSocket, keyPair, connectionToAgent, connections)).start();
+                        new Thread(
+                                new ApiGatewayThread(clientSocket, keyPair, apiGatewayId, connectionToAgent, connections)
+                        ).start();
                     }
                 } catch (IOException e) {
                     Utils.logException(e, "Error while creating socket from incoming connection");

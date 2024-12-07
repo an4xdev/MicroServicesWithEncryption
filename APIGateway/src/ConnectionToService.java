@@ -1,4 +1,5 @@
-﻿import Messages.BaseForwardRequest;
+﻿import Agent.Requests.CreatedConnection;
+import Messages.BaseForwardRequest;
 import Messages.BaseForwardResponse;
 
 import java.io.ObjectInputStream;
@@ -12,14 +13,29 @@ public class ConnectionToService implements Runnable {
     private Socket socket;
     private ObjectOutputStream out;
     private ObjectInputStream in;
+
     private final int servicePort;
     private final String serviceHost;
+    private final UUID apiGatewayId;
+    private final UUID targetServiceId;
+    private final String targetServiceName;
     private final ArrayDeque<BaseForwardResponse> messagesToReceive;
+    private final ConnectionToAgent connectionToAgent;
 
-    public ConnectionToService(int servicePort, String serviceHost) {
+    private boolean isRunning = true;
+
+    public ConnectionToService(
+            int servicePort, String serviceHost,
+            UUID apiGatewayId,
+            UUID targetServiceId, String targetServiceName,
+            ConnectionToAgent connectionToAgent) {
         this.servicePort = servicePort;
         this.serviceHost = serviceHost;
         this.messagesToReceive = new ArrayDeque<>();
+        this.apiGatewayId = apiGatewayId;
+        this.targetServiceId = targetServiceId;
+        this.targetServiceName = targetServiceName;
+        this.connectionToAgent = connectionToAgent;
         run();
     }
 
@@ -84,13 +100,39 @@ public class ConnectionToService implements Runnable {
         }
     }
 
+    public UUID getTargetServiceId() {
+        return targetServiceId;
+    }
+
+    public void stop(){
+        isRunning = false;
+        cleanResources();
+    }
+
     /**
      * Runs this operation.
      */
     @Override
     public void run() {
         prepare();
-        while (true) {
+
+        CreatedConnection req = new CreatedConnection(
+                UUID.randomUUID(),
+                "Api Gateway",
+                apiGatewayId,
+                targetServiceName,
+                targetServiceId
+        );
+
+        try {
+            connectionToAgent.sendMessageToAgent(req);
+        } catch (Exception e) {
+            Utils.logException(e, "Error while sending created connection message to agent.");
+            cleanResources();
+            return;
+        }
+
+        while (isRunning) {
             Object receivedObject;
             try {
                 receivedObject = in.readObject();
@@ -99,8 +141,7 @@ public class ConnectionToService implements Runnable {
                 }
                 if (receivedObject instanceof BaseForwardResponse res) {
                     addMessage(res);
-                }
-                else {
+                } else {
                     Utils.logError("Unknown message.");
                     cleanResources();
                     return;
@@ -111,5 +152,7 @@ public class ConnectionToService implements Runnable {
                 return;
             }
         }
+
+        cleanResources();
     }
 }

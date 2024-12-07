@@ -1,27 +1,26 @@
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.UUID;
 
 public class Main {
     public static void main(String[] args) {
-        if(args.length < 5) {
-            Utils.logDebug("Usage: java Main <type> <port> <agentPort> <agentHost> <uuid>");
-            return;
-        }
 
-        int port = -1;
-        String name = null;
-        int type = -1;
-        int agentPort = -1;
-        String agentHost = null;
-        UUID messageId = null;
+        int port;
+        String name;
+        int type;
+        int agentPort;
+        String agentHost;
+        UUID messageId;
+        UUID serviceId = null;
 
         type = Integer.parseInt(args[0]);
         port = Integer.parseInt(args[1]);
         agentPort = Integer.parseInt(args[2]);
         agentHost = args[3];
         messageId = UUID.fromString(args[4]);
+        serviceId = UUID.fromString(args[5]);
 
         switch (type) {
             case 0 -> name = "Register";
@@ -35,15 +34,19 @@ public class Main {
             }
         }
 
-        // TODO: add co threads to handle communication with agent
-        ServiceToAgentThread serviceToAgentThread = new ServiceToAgentThread(agentPort, agentHost, messageId, name);
+        ArrayList<ServiceThread> serviceThreads = new ArrayList<>();
+
+        ServiceToAgentThread serviceToAgentThread = new ServiceToAgentThread(agentPort, agentHost, messageId, name, serviceId, serviceThreads);
 
         Utils.logInfo(name + " service is running on port: " + port);
 
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             while (true) {
                 Socket socket = serverSocket.accept();
-                new Thread(new ServiceThread(socket, type)).start();
+                var serviceThread = new ServiceThread(socket, type);
+                serviceThreads.add(serviceThread);
+
+                new Thread(serviceThread).start();
             }
         } catch (IOException e) {
             throw new RuntimeException(e);

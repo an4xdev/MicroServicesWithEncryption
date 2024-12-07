@@ -1,9 +1,12 @@
+import Agent.Requests.Close;
 import Agent.Requests.HelloMessage;
+import Agent.Responses.ReadyToClose;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.UUID;
 
 public class ServiceToAgentThread implements Runnable {
@@ -14,12 +17,20 @@ public class ServiceToAgentThread implements Runnable {
     private final String agentHost;
     private final UUID firstMessageId;
     private final String serviceName;
+    private final UUID serviceId;
+    private final ArrayList<ServiceThread> serviceThreads;
 
-    public ServiceToAgentThread(int agentPort, String agentHost, UUID firstMessageId, String serviceName) {
+    public ServiceToAgentThread(
+            int agentPort, String agentHost,
+            UUID firstMessageId,
+            String serviceName, UUID serviceId,
+            ArrayList<ServiceThread> serviceThreads) {
         this.agentPort = agentPort;
         this.agentHost = agentHost;
         this.firstMessageId = firstMessageId;
         this.serviceName = serviceName;
+        this.serviceId = serviceId;
+        this.serviceThreads = serviceThreads;
         run();
     }
 
@@ -54,7 +65,7 @@ public class ServiceToAgentThread implements Runnable {
     @Override
     public void run() {
         prepare();
-        HelloMessage helloMessage = new HelloMessage(firstMessageId, serviceName);
+        HelloMessage helloMessage = new HelloMessage(firstMessageId, serviceName, serviceId);
         try {
             out.writeObject(helloMessage);
         } catch (IOException e) {
@@ -67,8 +78,28 @@ public class ServiceToAgentThread implements Runnable {
             Object receivedObject;
             try {
                 receivedObject = in.readObject();
+                if(receivedObject == null) {
+                    cleanResources();
+                    return;
+                }
+                if(receivedObject instanceof Close close) {
+                    synchronized (serviceThreads) {
+                        for (ServiceThread serviceThread : serviceThreads) {
+                           serviceThread.stop();
+                        }
+                        serviceThreads.notifyAll();
+                    }
+                    out.writeObject(new ReadyToClose(close.messageId, serviceId));
+                    Thread.sleep(1000);
+                    cleanResources();
+                    System.exit(0);
+                }
             } catch (IOException | ClassNotFoundException e) {
                 Utils.logException(e, "Error while reading object from input stream.");
+                cleanResources();
+                return;
+            } catch (InterruptedException e) {
+                Utils.logException(e, "Error while sleeping.");
                 cleanResources();
                 return;
             }

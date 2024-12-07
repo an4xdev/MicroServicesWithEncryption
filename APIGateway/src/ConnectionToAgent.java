@@ -1,9 +1,14 @@
 ﻿import Agent.AgentMessage;
+import Agent.Requests.CloseConnection;
+import Agent.Responses.ClosedConnection;
+import Enums.Services;
 
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.UUID;
 
 public class ConnectionToAgent implements Runnable {
@@ -14,10 +19,17 @@ public class ConnectionToAgent implements Runnable {
     private final int agentPort;
     private final String agentHost;
     private final ArrayDeque<AgentMessage> messagesToReceive;
+    private final HashMap<Services, ArrayList<ConnectionToService>> connections;
+    private final UUID apiGatewayId;
 
-    public ConnectionToAgent(int agentPort, String agentHost) {
+    public ConnectionToAgent(
+            int agentPort, String agentHost,
+            HashMap<Services, ArrayList<ConnectionToService>> connections, UUID apiGatewayId
+    ) {
         this.agentPort = agentPort;
         this.agentHost = agentHost;
+        this.connections = connections;
+        this.apiGatewayId = apiGatewayId;
         this.messagesToReceive = new ArrayDeque<>();
         run();
     }
@@ -94,9 +106,28 @@ public class ConnectionToAgent implements Runnable {
                     break;
                 }
                 if (receivedObject instanceof AgentMessage) {
-                    addMessage((AgentMessage) receivedObject);
-                }
-                else {
+                    if (receivedObject instanceof CloseConnection close) {
+                        synchronized (connections) {
+                            var listCollection = connections.values();
+                            for (var connection : listCollection) {
+                                for (var toService : connection) {
+                                    if (toService.getTargetServiceId().equals(close.targetServiceId)) {
+                                        toService.stop();
+                                        
+                                        connection.remove(toService);
+
+                                        sendMessageToAgent(new ClosedConnection(close.messageId, apiGatewayId, close.targetServiceId));
+
+                                        break;
+                                    }
+                                }
+                            }
+                            connections.notifyAll();
+                        }
+                    } else {
+                        addMessage((AgentMessage) receivedObject);
+                    }
+                } else {
                     Utils.logError("Unknown message.");
                     cleanResources();
                     return;

@@ -1,4 +1,5 @@
 import Agent.Requests.ConnectToService;
+import Agent.Requests.SentData;
 import Agent.Responses.ConnectData;
 import Enums.Services;
 import Files.DownloadFile.DownloadFileForwardRequest;
@@ -55,10 +56,15 @@ public class ApiGatewayThread implements Runnable {
 
     private final ConnectionToAgent connectionToAgent;
     private final HashMap<Services, ArrayList<ConnectionToService>> connections;
+    private final UUID apiGatewayId;
 
-    public ApiGatewayThread(Socket socket, KeyPair keyPair, ConnectionToAgent connectionToAgent, HashMap<Services, ArrayList<ConnectionToService>> connections) {
+    public ApiGatewayThread(Socket socket, KeyPair keyPair, UUID apiGatewayId,
+                            ConnectionToAgent connectionToAgent,
+                            HashMap<Services,
+                                    ArrayList<ConnectionToService>> connections) {
         this.clientSocket = socket;
         this.keyPair = keyPair;
+        this.apiGatewayId = apiGatewayId;
         this.connectionToAgent = connectionToAgent;
         this.connections = connections;
     }
@@ -204,13 +210,13 @@ public class ApiGatewayThread implements Runnable {
 
         synchronized (connections) {
             var list = connections.get(service);
-            if(!list.isEmpty()) {
+            if (!list.isEmpty()) {
                 serviceRunnable = list.getFirst();
             }
             connections.notifyAll();
         }
 
-        if(serviceRunnable == null) {
+        if (serviceRunnable == null) {
             var connectionRequest = new ConnectToService(request.messageId, service);
             connectionToAgent.sendMessageToAgent(connectionRequest);
 
@@ -221,7 +227,12 @@ public class ApiGatewayThread implements Runnable {
                 return new Operation(false, "Could not receive response from agent.");
             }
 
-            var connectionToService = new ConnectionToService(response.port, response.host);
+            var connectionToService = new ConnectionToService(
+                    response.port, response.host,
+                    apiGatewayId,
+                    response.serviceId, response.serviceName,
+                    connectionToAgent);
+            
             synchronized (connections) {
                 connections.get(service).add(connectionToService);
                 connections.notifyAll();
@@ -230,6 +241,13 @@ public class ApiGatewayThread implements Runnable {
         }
 
         serviceRunnable.sendMessageToService(request);
+
+        connectionToAgent.sendMessageToAgent(
+                new SentData(
+                        UUID.randomUUID(),
+                        serviceRunnable.getTargetServiceId()
+                )
+        );
 
         return new Operation(true, "");
     }
@@ -240,13 +258,13 @@ public class ApiGatewayThread implements Runnable {
 
         synchronized (connections) {
             var list = connections.get(service);
-            if(!list.isEmpty()) {
+            if (!list.isEmpty()) {
                 serviceRunnable = list.getFirst();
             }
             connections.notifyAll();
         }
 
-        if(serviceRunnable == null) {
+        if (serviceRunnable == null) {
             return null;
         }
 

@@ -1,3 +1,4 @@
+import Enums.Ports;
 import Files.DownloadFile.DownloadFileForwardRequest;
 import Files.DownloadFile.DownloadFileForwardResponse;
 import Files.DownloadFile.DownloadFileRequest;
@@ -43,7 +44,7 @@ public class Main {
     public static PublicKey APIPublicKey;
 
     public static void main(String[] args) {
-        int port = Utils.Ports.ApiGateway.getPort();
+        int port = Ports.ApiGateway.getPort();
         int userId = -1;
         boolean logged = false;
 
