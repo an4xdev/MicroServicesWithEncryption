@@ -1,6 +1,7 @@
 import Agent.Requests.ConnectToService;
 import Agent.Requests.SentData;
 import Agent.Responses.ConnectData;
+import Enums.Ports;
 import Enums.Services;
 import Files.DownloadFile.DownloadFileForwardRequest;
 import Files.DownloadFile.DownloadFileForwardResponse;
@@ -188,6 +189,13 @@ public class ApiGatewayThread implements Runnable {
         // validating pong from client
 
         if (pongValueClient - 10 != valueAPI) {
+            try {
+                clientOutputStream.writeInt(400);
+                clientOutputStream.flush();
+            } catch (IOException e) {
+                Utils.logException(e, "Sending error status code to Client failed.");
+                return new Operation(false, "Sending error status code to Client failed.");
+            }
             Utils.logError("Ping pong data validation failed.");
             return new Operation(false, "Ping pong data validation failed.");
         }
@@ -217,6 +225,7 @@ public class ApiGatewayThread implements Runnable {
         }
 
         if (serviceRunnable == null) {
+            Utils.logDebug("No connection to service. Creating new connection.");
             var connectionRequest = new ConnectToService(request.messageId, service);
             connectionToAgent.sendMessageToAgent(connectionRequest);
 
@@ -227,18 +236,39 @@ public class ApiGatewayThread implements Runnable {
                 return new Operation(false, "Could not receive response from agent.");
             }
 
+            Utils.logDebug("Got connection data from agent.");
+
+            Utils.logDebug("HOST: " + response.host + " PORT: " + response.port + " SERVICE ID: " + response.serviceId + " SERVICE NAME: " + response.serviceName + " IS EQUAL: " + (Ports.Agent.getPort() == response.port));
+
             var connectionToService = new ConnectionToService(
                     response.port, response.host,
                     apiGatewayId,
                     response.serviceId, response.serviceName,
                     connectionToAgent);
-            
+
+            Utils.logDebug("Starting connection to service.");
+
             synchronized (connections) {
                 connections.get(service).add(connectionToService);
                 connections.notifyAll();
             }
+
+//            connectionToService.run();
+
+            new Thread(connectionToService).start();
+
             serviceRunnable = connectionToService;
+
+            while (!serviceRunnable.isRunning()) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Utils.logException(e, "Error while sleeping.");
+                }
+            }
         }
+
+        Utils.logDebug("Sending message to service.");
 
         serviceRunnable.sendMessageToService(request);
 
@@ -269,7 +299,9 @@ public class ApiGatewayThread implements Runnable {
         }
 
         try {
-            return serviceRunnable.getMessageFromService(messageId, clazz);
+            T messageFromService = serviceRunnable.getMessageFromService(messageId, clazz);
+            Utils.logDebug("Got message from service.");
+            return messageFromService;
         } catch (InterruptedException e) {
             return null;
         }

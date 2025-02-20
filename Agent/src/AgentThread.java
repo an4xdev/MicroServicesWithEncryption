@@ -16,7 +16,7 @@ import java.util.HashMap;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class AgentThread implements Runnable {
+public class AgentThread extends Thread {
 
     private final Socket clientSocket;
     private ObjectOutputStream out;
@@ -45,6 +45,8 @@ public class AgentThread implements Runnable {
         this.agentHost = agentHost;
         this.connections = connections;
         serviceId = null;
+        prepare();
+        start();
     }
 
     private void prepare() {
@@ -87,20 +89,23 @@ public class AgentThread implements Runnable {
     }
 
     private void handleHelloMessage(HelloMessage message) {
+        Utils.logInfo("Received hello message.");
         synchronized (globalMessages) {
             globalMessages.add(message);
-            globalMessages.notifyAll();
+            globalMessages.notify();
         }
         serviceName = message.serviceName;
         serviceId = message.serviceId;
     }
 
     private void handleRegisterToAgent(RegisterToAgent req) {
+        Utils.logInfo("Received register to agent message.");
         serviceName = req.serviceName;
         serviceId = req.serviceId;
     }
 
     private void handleConnectToService(ConnectToService req) {
+        Utils.logInfo("Received connect to service message.");
         int servicePort = -1;
         synchronized (services) {
             if (services.containsKey(req.service)) {
@@ -108,6 +113,7 @@ public class AgentThread implements Runnable {
                 if (instances != null) {
                     var instance = instances.getFirst();
                     if (instance != null) {
+                        Utils.logInfo("Service instance found.");
                         var response = new ConnectData(req.messageId, "localhost", instance.getPort(), instance.getServiceId(), instance.getServiceName());
                         try {
                             out.writeObject(response);
@@ -118,44 +124,52 @@ public class AgentThread implements Runnable {
                 }
             } else {
                 synchronized (port) {
-                    servicePort = port.getAndIncrement();
+                    servicePort = port.incrementAndGet();
                     port.notifyAll();
                 }
-                var serviceInstance = new ServiceInstance(servicePort, req.service, agentPort, agentHost, req.messageId, UUID.randomUUID());
-                services.put(req.service, new ArrayList<>() {{
-                    add(serviceInstance);
-                }});
+                Utils.logInfo("Service instance not found. Creating new one.");
+//                var serviceInstance =
+                        new ServiceInstance(servicePort, req.service, agentPort, agentHost, req.messageId, UUID.randomUUID()).start();
+//                serviceInstance.start();
+//                services.put(req.service, new ArrayList<>() {{
+//                    add(serviceInstance);
+//                }});
             }
             services.notifyAll();
-        }
+            AgentMessage message;
 
-        AgentMessage message;
-
-        synchronized (globalMessages) {
+            Utils.logDebug("Waiting for hello message.");
             while (true) {
-                message = globalMessages.poll();
-                if (message == null) {
-                    continue;
+                synchronized (globalMessages) {
+                    message = globalMessages.poll();
+                    if (message == null) {
+                        continue;
+                    }
+                    if (message.messageId.equals(req.messageId) && message instanceof HelloMessage) {
+                        Utils.logDebug("Found message in global messages.");
+                        break;
+                    }
+                    globalMessages.push(message);
+                    globalMessages.notify();
                 }
-                if (message.messageId == req.messageId && message instanceof HelloMessage) {
-                    break;
-                }
-                globalMessages.push(message);
             }
-            globalMessages.notifyAll();
+            Utils.logDebug("Hello message received.");
+
+            HelloMessage helloMessage = (HelloMessage) message;
+            ConnectData response = new ConnectData(req.messageId, "localhost", servicePort, helloMessage.serviceId, helloMessage.serviceName);
+
+            Utils.logInfo("Sending response.");
+            try {
+                out.writeObject(response);
+            } catch (IOException e) {
+                Utils.logException(e, "Error while sending response.");
+            }
         }
 
-        HelloMessage helloMessage = (HelloMessage) message;
-        ConnectData response = new ConnectData(req.messageId, "localhost", servicePort, helloMessage.serviceId, helloMessage.serviceName);
-
-        try {
-            out.writeObject(response);
-        } catch (IOException e) {
-            Utils.logException(e, "Error while sending response.");
-        }
     }
 
     private void handleCreatedConnection(CreatedConnection req) {
+        Utils.logInfo("Received created connection message.");
         synchronized (connections) {
             connections.add(
                     new ConnectionBetweenServices(
@@ -169,9 +183,11 @@ public class AgentThread implements Runnable {
     }
 
     private void handleSentData(SentData req) {
+        Utils.logInfo("Received sent data message.");
         synchronized (connections) {
             for (var conn : connections) {
                 if (conn.getTargetServiceId() == req.serviceId) {
+                    Utils.logInfo("Updating connection activity.");
                     conn.updateActivity();
                 }
             }
@@ -181,6 +197,7 @@ public class AgentThread implements Runnable {
             for (var instances : services.values()) {
                 for (var instance : instances) {
                     if (instance.getServiceId().equals(req.serviceId)) {
+                        Utils.logInfo("Updating service activity.");
                         instance.updateLastUsed();
                     }
                 }
@@ -190,6 +207,7 @@ public class AgentThread implements Runnable {
     }
 
     private void handleReadyToClose(ReadyToClose req) {
+        Utils.logInfo("Received ready to close message.");
         synchronized (services) {
             for (var instances : services.values()) {
                 instances.removeIf(instance -> instance.getServiceId().equals(req.serviceId));
@@ -199,6 +217,7 @@ public class AgentThread implements Runnable {
     }
 
     private void handleClosedConnection(ClosedConnection req) {
+        Utils.logInfo("Received closed connection message.");
         synchronized (connections) {
             connections.removeIf(conn ->
                     conn.getTargetServiceId() == req.targetServiceId &&
@@ -210,8 +229,6 @@ public class AgentThread implements Runnable {
 
     @Override
     public void run() {
-        prepare();
-
         while (isRunning) {
             Object receivedObject;
             try {

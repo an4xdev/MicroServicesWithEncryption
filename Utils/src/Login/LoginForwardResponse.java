@@ -2,7 +2,6 @@ package Login;
 
 import Messages.BaseForwardResponse;
 
-import java.io.Serializable;
 import java.util.UUID;
 
 public class LoginForwardResponse extends BaseForwardResponse {

@@ -41,7 +41,11 @@ public class CheckServicesActivityThread implements Runnable {
                         synchronized (agentThreads) {
                             for (var agentThread : agentThreads) {
                                 if (agentThread.getServiceId() == connection.getSourceServiceId()) {
-                                    CloseConnection closeConnection = new CloseConnection(UUID.randomUUID(), connection.getTargetServiceId());
+
+                                    CloseConnection closeConnection = new CloseConnection(
+                                            UUID.randomUUID(),
+                                            connection.getTargetServiceId()
+                                    );
                                     agentThread.sendMessage(closeConnection);
                                     break;
                                 }

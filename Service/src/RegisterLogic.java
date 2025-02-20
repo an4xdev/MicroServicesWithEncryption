@@ -44,9 +44,16 @@ public class RegisterLogic implements Runnable {
                     response.message = "User with this public key is already registered.";
                     Utils.logDebug("User with this public key is already registered.");
                 } else {
-                    int userId = DatabaseInsertNewUser.insertNewUser(req.login, req.publicKey.toString());
-                    response.code = 200;
-                    Utils.logDebug("New user with ID: " + userId);
+                    boolean added = DatabaseInsertNewUser.insertNewUser(req.login, req.publicKey.toString());
+                    if(!added) {
+                        response.code = 500;
+                        response.message = "Error while adding new user.";
+                        Utils.logDebug("Error while adding new user.");
+                    }
+                    else {
+                        response.code = 200;
+                        Utils.logDebug("New user with login: " + req.login);
+                    }
                 }
 
                 try {

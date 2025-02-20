@@ -58,13 +58,13 @@ public class Main {
         new Thread(connectionToAgent).start();
 
         connectionToAgent.sendMessageToAgent(new RegisterToAgent(UUID.randomUUID(), apiGatewayId, "ApiGateway"));
-
         try {
             try (ServerSocket serverSocket = new ServerSocket(port)) {
                 Utils.logInfo("Api Gateway started on port " + port);
                 try {
                     while (true) {
                         Socket clientSocket = serverSocket.accept();
+                        Utils.logInfo("Incoming connection from client");
                         Utils.logDebug("Connection established with client");
                         Utils.logDebug("Client port: " + clientSocket.getPort());
                         new Thread(

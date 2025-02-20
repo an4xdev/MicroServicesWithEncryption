@@ -115,11 +115,14 @@ public class Main {
                     case 1 -> {
                         System.out.println("Enter your username: ");
                         String data = in.readLine();
+
                         RegisterForwardRequest request = new RegisterForwardRequest();
                         request.login = data;
                         request.messageId = messageID;
                         request.publicKey = publicKey;
+
                         var registerOperation = Utils.sendMessage(RegisterRequest.class, outputStream, RegisterForwardRequest.ConvertToString(request), privateKey, symmetricKey);
+
                         if (!registerOperation.isSuccessful()) {
                             Utils.logError("Could not send registration message: " + registerOperation.message());
                             break;
@@ -127,6 +130,7 @@ public class Main {
 
                         RegisterResponse response = (RegisterResponse) inputStream.readObject();
                         var registerResponseOperation = Utils.processMessage(response.data, response.fingerPrint, APIPublicKey, symmetricKey);
+
                         if (!registerResponseOperation.isSuccessful()) {
                             Utils.logError("Could not parse registration response: " + registerResponseOperation.message());
                             break;
@@ -425,6 +429,7 @@ public class Main {
     }
 
     private static boolean connectToAPI(Socket socket, ObjectInputStream inputStream, ObjectOutputStream outputStream, PublicKey publicKey, PrivateKey privateKey, SecretKey symmetricKey) throws Exception {
+
         APIPublicKey = (PublicKey) inputStream.readObject();
         Utils.logDebug("Got API public key");
         outputStream.writeObject(publicKey);

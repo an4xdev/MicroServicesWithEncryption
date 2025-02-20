@@ -1,4 +1,4 @@
-﻿import Agent.AgentMessage;
+import Agent.AgentMessage;
 import Agent.Requests.CloseConnection;
 import Agent.Responses.ClosedConnection;
 import Enums.Services;
@@ -31,7 +31,7 @@ public class ConnectionToAgent implements Runnable {
         this.connections = connections;
         this.apiGatewayId = apiGatewayId;
         this.messagesToReceive = new ArrayDeque<>();
-        run();
+        prepare();
     }
 
     private void prepare() {
@@ -61,28 +61,36 @@ public class ConnectionToAgent implements Runnable {
         }
     }
 
-    private final Object lock = new Object();
+    private final Object lockReceive = new Object();
 
     public synchronized <T> T receiveMessageFromAgent(UUID messageId, Class<T> clazz) throws InterruptedException {
-        synchronized (lock) {
-            while (true) {
+        while (true) {
+            synchronized (messagesToReceive) {
                 if (!messagesToReceive.isEmpty()) {
                     AgentMessage message = messagesToReceive.poll();
                     if (message.messageId.equals(messageId) && clazz.isInstance(message)) {
+                        messagesToReceive.notify();
                         return clazz.cast(message);
                     } else {
                         messagesToReceive.push(message);
                     }
                 }
-                lock.wait();
+                messagesToReceive.notify();
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Utils.logException(e, "Error while sleeping.");
             }
         }
     }
 
+    private final Object lockAdd = new Object();
+
     public void addMessage(AgentMessage message) {
-        synchronized (lock) {
+        synchronized (lockAdd) {
             messagesToReceive.add(message);
-            lock.notify();
+            lockAdd.notify();
         }
     }
 
@@ -97,7 +105,6 @@ public class ConnectionToAgent implements Runnable {
 
     @Override
     public void run() {
-        prepare();
         while (true) {
             Object receivedObject;
             try {

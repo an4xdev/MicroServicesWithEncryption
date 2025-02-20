@@ -34,7 +34,7 @@ public class Main {
                 Utils.logDebug("Client port: " + clientSocket.getPort());
                 AgentThread agentThread = new AgentThread(clientSocket, services, port, globalMessages, agentPort, agentHost, connections);
                 agentThreads.add(agentThread);
-                new Thread(agentThread).start();
+//                new Thread(agentThread).start();
             }
         } catch (Exception e) {
             Utils.logException(e, "Error while creating server socket");

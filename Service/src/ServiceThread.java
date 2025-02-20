@@ -50,11 +50,11 @@ public class ServiceThread implements Runnable {
     public void run() {
         prepare();
         Runnable logic = switch (choice) {
-            case 1 -> new RegisterLogic(out, in);
-            case 2 -> new LoginLogic(out, in);
-            case 3 -> new ChatLogic(out, in);
-            case 4 -> new PostLogic(out, in);
-            case 5 -> new FileLogic(out, in);
+            case 0 -> new RegisterLogic(out, in);
+            case 1 -> new LoginLogic(out, in);
+            case 2 -> new ChatLogic(out, in);
+            case 3 -> new PostLogic(out, in);
+            case 4 -> new FileLogic(out, in);
             default -> throw new IllegalStateException("Unexpected value: " + choice);
         };
 

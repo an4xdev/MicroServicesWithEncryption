@@ -1,7 +1,8 @@
-﻿import Agent.Requests.CreatedConnection;
+import Agent.Requests.CreatedConnection;
 import Messages.BaseForwardRequest;
 import Messages.BaseForwardResponse;
 
+import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
@@ -22,7 +23,7 @@ public class ConnectionToService implements Runnable {
     private final ArrayDeque<BaseForwardResponse> messagesToReceive;
     private final ConnectionToAgent connectionToAgent;
 
-    private boolean isRunning = true;
+    private boolean isRunning;
 
     public ConnectionToService(
             int servicePort, String serviceHost,
@@ -36,18 +37,31 @@ public class ConnectionToService implements Runnable {
         this.targetServiceId = targetServiceId;
         this.targetServiceName = targetServiceName;
         this.connectionToAgent = connectionToAgent;
-        run();
+        prepare();
     }
 
     private void prepare() {
-        try {
-            socket = new Socket(serviceHost, servicePort);
-            out = new ObjectOutputStream(socket.getOutputStream());
-            in = new ObjectInputStream(socket.getInputStream());
-        } catch (Exception e) {
-            Utils.logException(e, "Error while creating input/output stream");
-            cleanResources();
+        int retries = 3;
+        while (retries > 0) {
+            try {
+                socket = new Socket(serviceHost, servicePort);
+                out = new ObjectOutputStream(socket.getOutputStream());
+                in = new ObjectInputStream(socket.getInputStream());
+                Utils.logDebug("Successfully connected to service.");
+                isRunning = true;
+                return;
+            } catch (IOException e) {
+                retries--;
+                Utils.logException(e, "Retrying connection to service... (" + retries + " retries left)");
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ignored) {
+
+                }
+            }
         }
+        Utils.logError("Failed to connect to service after retries.");
+        cleanResources();
     }
 
     private void cleanResources() {
@@ -66,28 +80,27 @@ public class ConnectionToService implements Runnable {
         }
     }
 
-    private final Object lock = new Object();
-
     public synchronized <T> T getMessageFromService(UUID messageId, Class<T> clazz) throws InterruptedException {
-        synchronized (lock) {
-            while (true) {
+        while (true) {
+            synchronized (messagesToReceive) {
                 if (!messagesToReceive.isEmpty()) {
                     BaseForwardResponse message = messagesToReceive.poll();
                     if (message.messageId.equals(messageId) && clazz.isInstance(message)) {
+                        messagesToReceive.notify();
                         return clazz.cast(message);
                     } else {
                         messagesToReceive.push(message);
                     }
                 }
-                lock.wait();
+                messagesToReceive.notify();
             }
         }
     }
 
     public void addMessage(BaseForwardResponse message) {
-        synchronized (lock) {
+        synchronized (messagesToReceive) {
             messagesToReceive.add(message);
-            lock.notify();
+            messagesToReceive.notify();
         }
     }
 
@@ -104,7 +117,7 @@ public class ConnectionToService implements Runnable {
         return targetServiceId;
     }
 
-    public void stop(){
+    public void stop() {
         isRunning = false;
         cleanResources();
     }
@@ -114,8 +127,6 @@ public class ConnectionToService implements Runnable {
      */
     @Override
     public void run() {
-        prepare();
-
         CreatedConnection req = new CreatedConnection(
                 UUID.randomUUID(),
                 "Api Gateway",
@@ -128,8 +139,8 @@ public class ConnectionToService implements Runnable {
             connectionToAgent.sendMessageToAgent(req);
         } catch (Exception e) {
             Utils.logException(e, "Error while sending created connection message to agent.");
-            cleanResources();
-            return;
+//            cleanResources();
+//            return;
         }
 
         while (isRunning) {
@@ -154,5 +165,9 @@ public class ConnectionToService implements Runnable {
         }
 
         cleanResources();
+    }
+
+    public boolean isRunning() {
+        return isRunning;
     }
 }

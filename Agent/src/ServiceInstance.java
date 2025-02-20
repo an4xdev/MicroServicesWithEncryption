@@ -27,7 +27,7 @@ public class ServiceInstance extends Thread {
         this.agentHost = agentHost;
         this.messageId = messageId;
         this.serviceId = serviceId;
-        start();
+        lastUsed = LocalDateTime.now();
     }
 
     public int getPort() {
@@ -55,7 +55,7 @@ public class ServiceInstance extends Thread {
         ArrayList<String> arguments = new ArrayList<>() {{
             add("java");
             add("-cp");
-            add("D:\\PROGRAMOWANIE\\SIECI\\APP\\MicroServicesWithEncryption\\Service\\out\\production\\Service\\;D:\\PROGRAMOWANIE\\SIECI\\APP\\MicroServicesWithEncryption\\Utils\\out\\artifacts\\Utils_jar\\Utils.jar");
+            add("D:\\PROGRAMOWANIE\\SIECI\\APP\\MicroServicesWithEncryption\\Service\\out\\production\\Service\\;D:\\PROGRAMOWANIE\\SIECI\\APP\\MicroServicesWithEncryption\\Utils\\out\\artifacts\\Utils_jar\\Utils.jar;D:\\PROGRAMOWANIE\\SIECI\\APP\\MicroServicesWithEncryption\\postgresql-42.7.4.jar");
             add("Main");
         }};
 
@@ -74,19 +74,23 @@ public class ServiceInstance extends Thread {
         arguments.add(messageId.toString());
         arguments.add(serviceId.toString());
 
-        ProcessBuilder builder = new ProcessBuilder(arguments).inheritIO().redirectErrorStream(true);
+        ProcessBuilder builder = new ProcessBuilder(arguments);
+        builder.inheritIO();
+        builder.redirectErrorStream(true);
         Process process = null;
         try {
+            Utils.logInfo("Starting service: " + serviceName);
             process = builder.start();
         } catch (IOException e) {
             Utils.logException(e, "Error while starting service: " + serviceName);
-            return;
+//            return;
         }
-        try {
-            process.waitFor();
-        } catch (InterruptedException e) {
-            Utils.logException(e, "Error in running instance of service: " + serviceName);
-        }
+
+//        try {
+//            process.waitFor();
+//        } catch (InterruptedException e) {
+//            Utils.logException(e, "Error in running instance of service: " + serviceName);
+//        }
 
     }
 

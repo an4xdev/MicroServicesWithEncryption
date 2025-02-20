@@ -36,13 +36,17 @@ public class Main {
 
         ArrayList<ServiceThread> serviceThreads = new ArrayList<>();
 
-        ServiceToAgentThread serviceToAgentThread = new ServiceToAgentThread(agentPort, agentHost, messageId, name, serviceId, serviceThreads);
+        Utils.logInfo("Connecting to agent on port: " + agentPort);
+
+//        ServiceToAgentThread serviceToAgentThread =
+                new ServiceToAgentThread(agentPort, agentHost, messageId, name, serviceId, serviceThreads).start();
 
         Utils.logInfo(name + " service is running on port: " + port);
 
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             while (true) {
                 Socket socket = serverSocket.accept();
+                Utils.logInfo("New client connected");
                 var serviceThread = new ServiceThread(socket, type);
                 serviceThreads.add(serviceThread);
 

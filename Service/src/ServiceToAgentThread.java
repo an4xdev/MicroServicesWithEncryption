@@ -9,7 +9,7 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.UUID;
 
-public class ServiceToAgentThread implements Runnable {
+public class ServiceToAgentThread extends Thread {
     private Socket socket;
     private ObjectOutputStream out;
     private ObjectInputStream in;
@@ -31,7 +31,6 @@ public class ServiceToAgentThread implements Runnable {
         this.serviceName = serviceName;
         this.serviceId = serviceId;
         this.serviceThreads = serviceThreads;
-        run();
     }
 
     private void prepare() {

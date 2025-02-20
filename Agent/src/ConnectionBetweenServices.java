@@ -17,6 +17,7 @@ public class ConnectionBetweenServices {
         this.sourceServiceId = sourceServiceId;
         this.targetService = targetService;
         this.targetServiceId = targetServiceId;
+        this.lastActivity = LocalDateTime.now();
     }
 
     public void updateActivity() {

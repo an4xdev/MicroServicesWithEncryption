@@ -7,7 +7,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
 public class DatabaseInsertNewUser {
-    public static int insertNewUser(String userName, String publicKey){
+    public static boolean insertNewUser(String userName, String publicKey){
         Connection connection;
         try {
             connection = DatabaseDriver.getConnection();
@@ -26,7 +26,7 @@ public class DatabaseInsertNewUser {
         try {
             int result = statement.executeUpdate();
             statement.close();
-            return result;
+            return result > 0;
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
